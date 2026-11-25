@@ -1,0 +1,39 @@
+# Secrets, site configs & runtime state (NEVER commit!)
+config.ini
+config.ini.backup-*
+.config.ini.lock
+*.ini.bak
+*图片.txt
+安企cms发布程序/
+源码文件清单.json
+源码迁移说明.md
+
+设置/
+文章目录/
+归档/
+fabu.log
+*.log
+*.db
+*.db-wal
+*.db-shm
+
+# Build & packaging outputs
+dist/
+build/
+release/
+.omx/
+.venv/
+venv/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.exe
+*.zip
+*.egg-info/
+
+# OS & editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

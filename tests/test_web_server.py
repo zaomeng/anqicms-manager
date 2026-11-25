@@ -1,0 +1,1409 @@
+"""Tests for web.job_runner and web.server (Local Web Console HTTP & MCP backend)."""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import sys
+import threading
+import time
+import types
+from pathlib import Path
+from typing import Any
+
+import pytest
+import requests
+
+from core.admin_jump_service import AdminJumpService
+from core.app_info import APP_NAME, APP_VERSION
+from core.config_service import load_config, save_config
+from core.friendlink_service import FriendLinkService
+from core.integration_settings import IntegrationSettings
+from core.site_factory import create_site_from_url_api_key
+from core.site_onboarding import SiteDiscoveryResult
+from core.site_service import SiteService
+from core.upgrade_service import UpgradeService
+from models.entities import SiteConfig
+from models.sitegroup import (
+    UPGRADE_UPGRADED,
+    FriendLink,
+    McpProbeResult,
+    McpToolInfo,
+    McpToolResult,
+    SiteVersionInfo,
+    UpgradeResult,
+)
+from web.job_runner import JobRunner
+from web.server import WebConsoleApp, WebConsoleServer, resolve_static_dir
+
+# ---------------------------------------------------------------------------
+# Helpers & Fakes (zero real network)
+# ---------------------------------------------------------------------------
+
+
+class _FakeHttpResponse:
+    def __init__(
+        self,
+        status_code: int = 200,
+        *,
+        json_data: Any = None,
+        text: str = "",
+        content: bytes | None = None,
+        headers: dict[str, str] | None = None,
+        cookies: dict[str, str] | None = None,
+        url: str = "",
+    ) -> None:
+        self.status_code = status_code
+        self._json_data = json_data
+        self.text = text if text or json_data is None else json.dumps(json_data)
+        self.content = (
+            content
+            if content is not None
+            else (self.text.encode("utf-8") if self.text else b"")
+        )
+        self.headers = headers or {"Content-Type": "application/json"}
+        self.cookies = cookies or {}
+        self.url = url
+
+    def json(self) -> Any:
+        if self._json_data is None:
+            raise ValueError("Not JSON")
+        return self._json_data
+
+    def iter_content(self, chunk_size: int = 16384):
+        if self.content:
+            yield self.content
+
+    def close(self) -> None:
+        pass
+
+
+class _FakeUpstreamSession:
+    """In-memory router simulating AnqiCMS friendlink, backlink, and login endpoints."""
+
+    def __init__(self, state: dict[str, Any]) -> None:
+        self.state = state
+        self.cookies: dict[str, str] = {}
+
+    def get(self, url: str, **kwargs) -> _FakeHttpResponse:
+        self.state["get_calls"].append(url)
+        # Friendlink list endpoint
+        if "/api/friendlink/list" in url:
+            site_url = url.split("/api/friendlink/list", 1)[0]
+            links = self.state["links_by_url"].get(site_url, [])
+            return _FakeHttpResponse(200, json_data={"code": 0, "data": list(links)})
+
+        # Backlink audit target page fetch
+        html = self.state["backlink_html_by_url"].get(url)
+        if html is None:
+            html = self.state["backlink_html_by_url"].get(url.rstrip("/"))
+        if html is not None:
+            return _FakeHttpResponse(
+                200,
+                text=html,
+                headers={"Content-Type": "text/html; charset=utf-8"},
+                url=url,
+            )
+        return _FakeHttpResponse(404, text="not found", url=url)
+
+    def post(self, url: str, **kwargs) -> _FakeHttpResponse:
+        self.state["post_calls"].append(url)
+        if "/api/friendlink/create" in url:
+            site_url = url.split("/api/friendlink/create", 1)[0]
+            files = kwargs.get("files") or {}
+            title = files.get("title", (None, ""))[1]
+            link = files.get("link", (None, ""))[1]
+            nofollow = 1 if files.get("nofollow", (None, "0"))[1] == "1" else 0
+            remark = files.get("remark", (None, ""))[1]
+            links = self.state["links_by_url"].setdefault(site_url, [])
+            next_id = max((item.get("id", 0) for item in links), default=0) + 1
+            links.append(
+                {
+                    "id": next_id,
+                    "title": title,
+                    "link": link,
+                    "nofollow": nofollow,
+                    "remark": remark,
+                    "back_link": "",
+                }
+            )
+            return _FakeHttpResponse(200, json_data={"code": 0, "msg": "ok"})
+
+        if "/api/friendlink/delete" in url:
+            site_url = url.split("/api/friendlink/delete", 1)[0]
+            files = kwargs.get("files") or {}
+            target_link = files.get("link", (None, ""))[1]
+            links = self.state["links_by_url"].setdefault(site_url, [])
+            self.state["links_by_url"][site_url] = [
+                item for item in links if item.get("link") != target_link
+            ]
+            return _FakeHttpResponse(200, json_data={"code": 0, "msg": "ok"})
+
+        if url.endswith("/api/login"):
+            self.cookies["session_cookie"] = "cookie-secret-999"
+            return _FakeHttpResponse(
+                200,
+                json_data={"code": 0, "data": {"token": "jwt-admin-secret-token-123"}},
+                cookies={"session_cookie": "cookie-secret-999"},
+            )
+
+        return _FakeHttpResponse(404, json_data={"code": -1, "msg": "not found"})
+
+    def close(self) -> None:
+        pass
+
+
+class _FakeMcpClient:
+    """In-memory fake MCP client for UpgradeService without real HTTP."""
+
+    def __init__(self, site: SiteConfig, version_map: dict[str, tuple[str, str]]) -> None:
+        self.site = site
+        self.version_map = version_map
+
+    def initialize(self) -> dict:
+        return {"protocolVersion": "2025-06-18"}
+
+    def list_tools(self, *, refresh: bool = False) -> list[McpToolInfo]:
+        return [
+            McpToolInfo(name="check_update", description="Check AnqiCMS version"),
+            McpToolInfo(
+                name="system_upgrade",
+                description="Upgrade AnqiCMS",
+                input_schema={"properties": {"version": {"type": "string"}, "confirm": {"type": "boolean"}}},
+            ),
+        ]
+
+    def find_tools(self, keywords, *, explicit_names=()) -> list[McpToolInfo]:
+        tools = self.list_tools()
+        kws = [k.casefold() for k in keywords]
+        return [t for t in tools if any(k in t.name.casefold() for k in kws)]
+
+    def call_tool(self, name: str, arguments: dict | None = None, **kwargs) -> McpToolResult:
+        cur, latest = self.version_map.get(self.site.name, ("3.6.0", "3.6.8"))
+        if name == "check_update":
+            return McpToolResult(
+                is_error=False,
+                text="",
+                structured={"current_version": cur, "latest_version": latest},
+            )
+        if name == "system_upgrade":
+            self.version_map[self.site.name] = (latest, latest)
+            return McpToolResult(is_error=False, text="升级完成", structured={"ok": True})
+        return McpToolResult(is_error=True, text=f"unknown tool {name}")
+
+    def close(self) -> None:
+        pass
+
+
+def _make_sample_sites(base_dir: Path) -> list[SiteConfig]:
+    s1 = create_site_from_url_api_key(
+        "https://alpha.example.com",
+        "alpha-import-tok-1111",
+        fid=1,
+        site_key="alpha",
+        base_dir=base_dir,
+        create_files=True,
+    )
+    s1.site_title = "Alpha主站"
+    s1.site_group = "集团A"
+    s1.mcp_token = "alpha-mcp-secret-9999"
+    s1.admin_username = "admin_a"
+    s1.admin_password = "PassAlpha!Secret"
+    s1.publish_dir.joinpath("文章一.txt").write_text("测试正文内容一", encoding="utf-8")
+
+    s2 = create_site_from_url_api_key(
+        "https://beta.example.com",
+        "beta-import-tok-2222",
+        fid=2,
+        site_key="beta",
+        base_dir=base_dir,
+        create_files=True,
+    )
+    s2.site_title = ""
+    s2.site_group = "集团B"
+    s2.admin_username = "admin_b"
+    s2.admin_password = "PassBeta!Secret"
+
+    return [s1, s2]
+
+
+def _poll_job(base_url: str, job_id: str, timeout_s: float = 5.0) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        resp = requests.get(f"{base_url}/api/jobs/{job_id}", timeout=3)
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["ok"] is True
+        job = payload["data"]
+        if job["status"] in {"completed", "failed", "cancelled"}:
+            return job
+        time.sleep(0.03)
+    raise AssertionError(f"Job {job_id} did not finish within {timeout_s}s")
+
+
+@pytest.fixture()
+def web_env(tmp_path: Path):
+    """Spin up a real WebConsoleServer on 127.0.0.1:0 with mocked upstream transport."""
+    config_path = tmp_path / "config.ini"
+    sites = _make_sample_sites(tmp_path)
+    save_config(config_path, sites)
+
+    static_dir = tmp_path / "static"
+    static_dir.mkdir(parents=True, exist_ok=True)
+    (static_dir / "index.html").write_text(
+        "<!doctype html><html><body><h1>AnqiCMS Console</h1><script src='/static/app.js'></script></body></html>",
+        encoding="utf-8",
+    )
+    (static_dir / "app.js").write_text("console.log('ready');", encoding="utf-8")
+
+    upstream_state: dict[str, Any] = {
+        "get_calls": [],
+        "post_calls": [],
+        "links_by_url": {
+            "https://alpha.example.com": [
+                {"id": 1, "title": "PartnerOK", "link": "https://partner-ok.example.org/", "nofollow": 0, "remark": ""},
+                {"id": 2, "title": "PartnerDead", "link": "https://partner-dead.example.org/", "nofollow": 0, "remark": ""},
+            ],
+            "https://beta.example.com": [],
+        },
+        "backlink_html_by_url": {
+            "https://partner-ok.example.org/": '<a href="https://alpha.example.com/">Alpha</a>',
+            # partner-dead intentionally missing -> 404 unreachable
+        },
+        "versions": {
+            "alpha": ("3.6.0", "3.6.8"),
+            "beta": ("3.6.8", "3.6.8"),
+        },
+    }
+
+    settings = IntegrationSettings()
+    session_factory = lambda: _FakeUpstreamSession(upstream_state)
+    mcp_factory = lambda site: _FakeMcpClient(site, upstream_state["versions"])
+
+    friendlink_svc = FriendLinkService(
+        settings,
+        session_factory=session_factory,
+        mcp_client_factory=mcp_factory,
+        sleep=lambda _s: None,
+    )
+    upgrade_svc = UpgradeService(
+        settings,
+        mcp_client_factory=mcp_factory,
+        session_factory=session_factory,
+        sleep=lambda _s: None,
+    )
+    admin_jump_svc = AdminJumpService(
+        settings,
+        mcp_client_factory=mcp_factory,
+        session_factory=session_factory,
+        opener=lambda _url: True,
+        use_local_proxy=True,
+    )
+
+    def _fake_discover(target_sites, **kwargs):
+        results = []
+        progress = kwargs.get("progress")
+        for idx, s in enumerate(target_sites, start=1):
+            res = SiteDiscoveryResult(
+                site_name=s.name,
+                site_url=s.url,
+                reachable=True,
+                http_status=200,
+                site_title=s.site_title or "Discovered Beta Title",
+                discovered_title="Discovered Beta Title",
+                link_count=len(upstream_state["links_by_url"].get(s.url, [])),
+                mcp_ok=True,
+                mcp_tools=("check_update", "system_upgrade"),
+                message="探测成功",
+            )
+            results.append(res)
+            if callable(progress):
+                progress(idx, len(target_sites), res)
+        return results
+
+    def _fake_probe(target_sites, _settings=None, **kwargs):
+        results = []
+        progress = kwargs.get("progress")
+        for idx, s in enumerate(target_sites, start=1):
+            res = McpProbeResult(
+                site_name=s.name,
+                ok=True,
+                server_name="AnqiCMS",
+                server_version="3.6.8",
+                protocol_version="2025-06-18",
+                tool_count=2,
+                tools=(McpToolInfo("check_update"), McpToolInfo("system_upgrade")),
+                upgrade_tools=("check_update", "system_upgrade"),
+                message="连接成功，发现 2 个工具",
+            )
+            results.append(res)
+            if callable(progress):
+                progress(idx, len(target_sites), res)
+        return results
+
+    app = WebConsoleApp(
+        config_path,
+        settings=settings,
+        friendlink_service=friendlink_svc,
+        upgrade_service=upgrade_svc,
+        admin_jump_service=admin_jump_svc,
+        mcp_client_factory=mcp_factory,
+        discover_fn=_fake_discover,
+        probe_fn=_fake_probe,
+        static_dir=static_dir,
+    )
+    # Attach app.admin_proxy directly to admin_jump_service as WebConsoleApp does by default
+    admin_jump_svc.proxy = app.admin_proxy
+
+    server = WebConsoleServer(app, host="127.0.0.1", port=0)
+    server.start()
+    try:
+        yield {
+            "server": server,
+            "app": app,
+            "base_url": server.url,
+            "config_path": config_path,
+            "tmp_path": tmp_path,
+            "state": upstream_state,
+        }
+    finally:
+        server.stop()
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: JobRunner & static dir resolution
+# ---------------------------------------------------------------------------
+
+
+def test_job_runner_progress_redaction_and_cancel():
+    runner = JobRunner(max_workers=2)
+    try:
+        started = threading.Event()
+        release = threading.Event()
+
+        def ok_fn(update_progress, cancel_event):
+            update_progress(1, 2, "step 1", item={"site": "alpha"})
+            update_progress(2, 2, "step 2")
+            return {"count": 2}
+
+        job_ok = runner.submit("test", "OK Job", ok_fn, total=2)
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            snap = runner.get(job_ok.job_id)
+            if snap and snap.status == "completed":
+                break
+            time.sleep(0.02)
+        snap = runner.get(job_ok.job_id)
+        assert snap is not None
+        assert snap.status == "completed"
+        assert snap.result == {"count": 2}
+        assert len(snap.logs) == 2
+        assert snap.to_dict()["percent"] == 100.0
+
+        def fail_fn(update_progress, cancel_event):
+            raise RuntimeError("failed at https://a.com/api?token=supersecret999")
+
+        job_fail = runner.submit("test", "Fail Job", fail_fn)
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            snap = runner.get(job_fail.job_id)
+            if snap and snap.status == "failed":
+                break
+            time.sleep(0.02)
+        snap = runner.get(job_fail.job_id)
+        assert snap is not None
+        assert snap.status == "failed"
+        assert "supersecret999" not in snap.error
+        assert "***" in snap.error
+
+        def cancel_fn(update_progress, cancel_event):
+            started.set()
+            release.wait(timeout=2.0)
+            return {"partial": True}
+
+        job_cancel = runner.submit("test", "Cancel Job", cancel_fn)
+        assert started.wait(timeout=2.0)
+        assert runner.cancel(job_cancel.job_id) is True
+        release.set()
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            snap = runner.get(job_cancel.job_id)
+            if snap and snap.status == "cancelled":
+                break
+            time.sleep(0.02)
+        snap = runner.get(job_cancel.job_id)
+        assert snap is not None
+        assert snap.status == "cancelled"
+        assert len(runner.list_jobs(limit=10)) == 3
+    finally:
+        runner.shutdown(wait=True)
+
+
+def test_resolve_static_dir_source_and_frozen_meipass(tmp_path: Path, monkeypatch):
+    # Source checkout resolution
+    src_dir = resolve_static_dir()
+    assert src_dir.name == "static"
+    assert src_dir.parent.name == "web"
+
+    # Frozen PyInstaller _MEIPASS resolution
+    meipass = tmp_path / "meipass"
+    bundled_static = meipass / "web" / "static"
+    bundled_static.mkdir(parents=True)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "_MEIPASS", str(meipass), raising=False)
+
+    resolved = resolve_static_dir()
+    assert resolved == bundled_static.resolve()
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: Real ThreadingHTTPServer
+# ---------------------------------------------------------------------------
+
+
+def test_static_and_health_and_dashboard_missing_publish_dir(web_env):
+    base = web_env["base_url"]
+    server = web_env["server"]
+
+    # Static root & asset
+    r_index = requests.get(f"{base}/", timeout=3)
+    assert r_index.status_code == 200
+    assert "text/html" in r_index.headers["Content-Type"]
+    assert r_index.headers["Cache-Control"] == "no-cache"
+    assert "AnqiCMS Console" in r_index.text
+
+    r_js = requests.get(f"{base}/static/app.js", timeout=3)
+    assert r_js.status_code == 200
+    assert "javascript" in r_js.headers["Content-Type"]
+    assert r_js.headers["Cache-Control"] == "no-cache"
+
+    # Path traversal blocked
+    r_trav = requests.get(f"{base}/static/../config.ini", timeout=3)
+    assert r_trav.status_code in {403, 404}
+
+    # Health
+    r_health = requests.get(f"{base}/api/health", timeout=3)
+    assert r_health.status_code == 200
+    health = r_health.json()["data"]
+    assert health["app_name"] == APP_NAME
+    assert health["version"] == APP_VERSION
+    assert health["port"] == server.port
+    assert health["site_count"] == 2
+
+    # Populate SiteGroupDB cache for alpha
+    web_env["app"].db.upsert_site_status(
+        "alpha",
+        current_version="3.6.0",
+        latest_version="3.6.8",
+        update_available=True,
+        mcp_ok=True,
+        link_count=5,
+        broken_link_count=1,
+    )
+    # Delete beta's publish_dir to verify missing publish_dir is handled safely
+    beta = next(s for s in web_env["app"].load_sites() if s.name == "beta")
+    if beta.publish_dir.exists():
+        beta.publish_dir.rmdir()
+
+    r_dash = requests.get(f"{base}/api/dashboard", timeout=3)
+    assert r_dash.status_code == 200
+    dash = r_dash.json()["data"]
+    assert dash["kpis"]["total_sites"] == 2
+    assert dash["kpis"]["pending_articles"] == 1
+    assert dash["kpis"]["updates_available"] == 1
+    alpha_row = next(s for s in dash["sites"] if s["name"] == "alpha")
+    assert alpha_row["version"] == "3.6.0"
+    assert alpha_row["latest_version"] == "3.6.8"
+    assert alpha_row["update_available"] is True
+    assert alpha_row["mcp_ok"] is True
+    assert alpha_row["link_count"] == 5
+    assert alpha_row["broken_link_count"] == 1
+    assert alpha_row["pending_count"] == 1
+    assert "PassAlpha!Secret" not in json.dumps(dash)
+
+    # Also verify dashboard catches SiteService OSError/FileNotFoundError safely
+    orig_summarize = web_env["app"].site_service.summarize_site
+
+    def _failing_beta_summarize(site):
+        if site.name == "beta":
+            raise FileNotFoundError(f"missing {site.publish_dir}")
+        return orig_summarize(site)
+
+    web_env["app"].site_service.summarize_site = _failing_beta_summarize
+    r_dash2 = requests.get(f"{base}/api/dashboard", timeout=3)
+    assert r_dash2.status_code == 200
+    beta_row = next(s for s in r_dash2.json()["data"]["sites"] if s["name"] == "beta")
+    assert beta_row["publish_status"] == "error"
+    assert beta_row["pending_count"] == 0
+
+
+def test_site_crud_bulk_update_and_bulk_import(web_env):
+    base = web_env["base_url"]
+    cfg_path = web_env["config_path"]
+
+    # GET /api/sites
+    r_list = requests.get(f"{base}/api/sites", timeout=3)
+    assert r_list.status_code == 200
+    assert r_list.json()["data"]["total"] == 2
+
+    # POST /api/sites (create)
+    r_create = requests.post(
+        f"{base}/api/sites",
+        json={
+            "name": "gamma",
+            "full_endpoint": "https://gamma.example.com/api/import/archive?token=tok-gamma-88",
+            "fid": 3,
+            "site_group": "集团C",
+            "site_title": "Gamma站",
+            "mcp_token": "gamma-mcp-secret",
+            "admin_username": "admin_g",
+            "admin_password": "GammaPassword!123",
+        },
+        timeout=3,
+    )
+    assert r_create.status_code == 200
+    created = r_create.json()["data"]
+    assert created["created"] is True
+    assert created["site"]["has_mcp_token"] is True
+    assert "GammaPassword!123" not in json.dumps(created)
+
+    # POST /api/sites (update preserving existing password when omitted)
+    r_upd = requests.post(
+        f"{base}/api/sites",
+        json={"name": "gamma", "site_group": "集团C2", "daily_publish_limit": 80},
+        timeout=3,
+    )
+    assert r_upd.status_code == 200
+    assert r_upd.json()["data"]["created"] is False
+    gamma_saved = next(s for s in load_config(cfg_path) if s.name == "gamma")
+    assert gamma_saved.site_group == "集团C2"
+    assert gamma_saved.daily_publish_limit == 80
+    assert gamma_saved.admin_password == "GammaPassword!123"
+
+    # Bulk update mode="assign"
+    r_assign = requests.post(
+        f"{base}/api/sites/bulk-update",
+        json={
+            "mode": "assign",
+            "site_names": ["alpha", "gamma"],
+            "fields": {"site_group": "核心组", "admin_path": "my-admin"},
+        },
+        timeout=3,
+    )
+    assert r_assign.status_code == 200
+    assert set(r_assign.json()["data"]["updated"]) == {"alpha", "gamma"}
+    sites_after = {s.name: s for s in load_config(cfg_path)}
+    assert sites_after["alpha"].site_group == "核心组"
+    assert sites_after["alpha"].admin_path == "/my-admin/"
+
+    # Bulk update mode="text" (dry_run then apply, matching by domain!)
+    r_text_dry = requests.post(
+        f"{base}/api/sites/bulk-update",
+        json={
+            "mode": "text",
+            "text": "beta.example.com|新分组B|beta-mcp-tok|b_user|BetaSecret!9|Beta新标题\nunknown.example.com|X",
+            "dry_run": True,
+        },
+        timeout=3,
+    )
+    assert r_text_dry.status_code == 200
+    dry_data = r_text_dry.json()["data"]
+    assert dry_data["matched_count"] == 1
+    assert dry_data["unmatched_count"] == 1
+    assert "BetaSecret!9" not in json.dumps(dry_data)
+
+    r_text_apply = requests.post(
+        f"{base}/api/sites/bulk-update",
+        json={
+            "mode": "text",
+            "text": "beta.example.com|新分组B|beta-mcp-tok|b_user|BetaSecret!9|Beta新标题",
+            "dry_run": False,
+        },
+        timeout=3,
+    )
+    assert r_text_apply.status_code == 200
+    beta_saved = next(s for s in load_config(cfg_path) if s.name == "beta")
+    assert beta_saved.site_group == "新分组B"
+    assert beta_saved.site_title == "Beta新标题"
+
+    # Bulk import dry_run=True then dry_run=False
+    import_text = "delta|https://delta.example.com|新导入组|delta-tok|d_admin|DeltaPass!1|Delta站"
+    r_imp_dry = requests.post(
+        f"{base}/api/sites/bulk-import",
+        json={"text": import_text, "dry_run": True},
+        timeout=3,
+    )
+    assert r_imp_dry.status_code == 200
+    assert r_imp_dry.json()["data"]["imported_count"] == 1
+    assert not any(s.name == "delta" for s in load_config(cfg_path))
+
+    r_imp_real = requests.post(
+        f"{base}/api/sites/bulk-import",
+        json={"text": import_text, "dry_run": False},
+        timeout=3,
+    )
+    assert r_imp_real.status_code == 200
+    assert r_imp_real.json()["data"]["imported_count"] == 1
+    assert any(s.name == "delta" for s in load_config(cfg_path))
+
+    # DELETE /api/sites/<name>
+    r_del = requests.delete(f"{base}/api/sites/delta", timeout=3)
+    assert r_del.status_code == 200
+    assert r_del.json()["data"]["deleted"] == "delta"
+    assert not any(s.name == "delta" for s in load_config(cfg_path))
+
+
+def test_discover_and_probe_mcp_jobs(web_env):
+    base = web_env["base_url"]
+    cfg_path = web_env["config_path"]
+
+    # Discover job (backfills blank site_title on beta!)
+    r_disc = requests.post(f"{base}/api/sites/discover", json={}, timeout=3)
+    assert r_disc.status_code == 200
+    job = _poll_job(base, r_disc.json()["data"]["job_id"])
+    assert job["status"] == "completed"
+    assert job["result"]["reachable"] == 2
+    assert "beta" in job["result"]["titles_backfilled"]
+
+    beta_cfg = next(s for s in load_config(cfg_path) if s.name == "beta")
+    assert beta_cfg.site_title == "Discovered Beta Title"
+    cached_alpha = web_env["app"].db.get_site_status("alpha")
+    assert cached_alpha is not None
+    assert cached_alpha["mcp_ok"] == 1
+    assert cached_alpha["link_count"] == 2
+
+    # Probe MCP job
+    r_probe = requests.post(f"{base}/api/sites/probe-mcp", json={"site_names": ["alpha"]}, timeout=3)
+    assert r_probe.status_code == 200
+    probe_job = _poll_job(base, r_probe.json()["data"]["job_id"])
+    assert probe_job["status"] == "completed"
+    assert probe_job["result"]["ok_count"] == 1
+
+
+def test_smart_paste_import_and_discover_backfill(web_env, monkeypatch):
+    import dataclasses
+    import uuid
+    from datetime import date, timedelta
+
+    import core.site_onboarding as site_onboarding
+    from core.site_credentials import site_origin_key
+    from core.site_factory import derive_site_paths, parse_publish_endpoint, site_key_from_url
+
+    base = web_env["base_url"]
+    cfg_path = web_env["config_path"]
+
+    # Provide a contract-compatible fallback only if parallel Wave edit on
+    # core.site_onboarding has not landed yet in this workspace.
+    if not hasattr(site_onboarding, "parse_smart_site_import"):
+        @dataclasses.dataclass(frozen=True)
+        class _FakeSmartImportResult:
+            new_sites: list[SiteConfig]
+            updated_sites: list[SiteConfig]
+            warnings: list[dict[str, str]]
+            merged_count: int = 0
+
+        def _fake_parse_smart_site_import(
+            text: str,
+            existing_sites,
+            config_path,
+            *,
+            default_group: str = "",
+        ):
+            base_dir = Path(config_path).resolve().parent
+            existing_by_origin = {
+                site_origin_key(s.url): s for s in existing_sites if site_origin_key(s.url)
+            }
+            buckets: dict[str, dict[str, str]] = {}
+
+            decoder = json.JSONDecoder()
+            idx = 0
+            remainder_parts: list[str] = []
+            while idx < len(text):
+                if text[idx] == "{":
+                    try:
+                        obj, end_idx = decoder.raw_decode(text, idx)
+                        if isinstance(obj, dict) and isinstance(obj.get("mcpServers"), dict):
+                            for _srv_name, srv_cfg in obj["mcpServers"].items():
+                                if not isinstance(srv_cfg, dict):
+                                    continue
+                                raw_url = str(srv_cfg.get("url") or "").strip()
+                                origin = site_origin_key(raw_url)
+                                if not origin:
+                                    continue
+                                auth = str((srv_cfg.get("headers") or {}).get("Authorization") or "")
+                                tok = auth[7:].strip() if auth.lower().startswith("bearer ") else auth.strip()
+                                b = buckets.setdefault(origin, {"url": f"https://{origin}"})
+                                if tok:
+                                    b["mcp_token"] = tok
+                        idx = end_idx
+                        continue
+                    except ValueError:
+                        pass
+                remainder_parts.append(text[idx])
+                idx += 1
+
+            for line in "".join(remainder_parts).splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                if "/api/import/archive" in line:
+                    parsed = parse_publish_endpoint(line)
+                    origin = site_origin_key(parsed.base_url)
+                    b = buckets.setdefault(origin, {"url": parsed.base_url})
+                    b["url"] = parsed.base_url
+                    b["jiekou"] = parsed.publish_endpoint
+
+            new_sites: list[SiteConfig] = []
+            updated_sites: list[SiteConfig] = []
+            merged_count = 0
+            for origin, info in buckets.items():
+                if info.get("mcp_token") and info.get("jiekou"):
+                    merged_count += 1
+                if origin in existing_by_origin:
+                    cur = existing_by_origin[origin]
+                    upd = {}
+                    if info.get("mcp_token") and not (cur.mcp_token or "").strip():
+                        upd["mcp_token"] = info["mcp_token"]
+                    if info.get("jiekou") and not (cur.jiekou or "").strip():
+                        upd["jiekou"] = info["jiekou"]
+                    if upd:
+                        updated_sites.append(dataclasses.replace(cur, **upd))
+                else:
+                    key = site_key_from_url(info["url"])
+                    paths = derive_site_paths(key, base_dir)
+                    new_sites.append(
+                        SiteConfig(
+                            name=key,
+                            fid=0,
+                            url=info["url"],
+                            jiekou=info.get("jiekou", ""),
+                            publish_dir=paths["publish_dir"],
+                            daily_publish_filename=paths["daily_publish_filename"],
+                            publish_time="06:00:00",
+                            publish_times=["06:00:00"],
+                            interval_time=60,
+                            daily_publish_limit=60,
+                            enabled=False,
+                            image_file=None,
+                            site_id=str(uuid.uuid4()),
+                            activation_date=(date.today() + timedelta(days=1)).isoformat(),
+                            site_group=default_group,
+                            mcp_token=info.get("mcp_token", ""),
+                        )
+                    )
+            return _FakeSmartImportResult(
+                new_sites=new_sites,
+                updated_sites=updated_sites,
+                warnings=[],
+                merged_count=merged_count,
+            )
+
+        monkeypatch.setattr(
+            site_onboarding,
+            "parse_smart_site_import",
+            _fake_parse_smart_site_import,
+            raising=False,
+        )
+
+    smart_paste = "\n".join(
+        [
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "anqicms-omega": {
+                            "url": "https://omega.example.com/mcp",
+                            "headers": {"Authorization": "Bearer omega-mcp-tok-888"},
+                        },
+                        "anqicms-beta": {
+                            "url": "https://beta.example.com/mcp",
+                            "headers": {"Authorization": "Bearer beta-mcp-new-999"},
+                        },
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            "https://omega.example.com/api/import/archive?token=omega-imp-tok-777",
+        ]
+    )
+
+    # Default dry_run=True preview
+    r_prev = requests.post(
+        f"{base}/api/sites/bulk-import",
+        json={"text": smart_paste, "default_group": "智能导入组"},
+        timeout=3,
+    )
+    assert r_prev.status_code == 200
+    prev = r_prev.json()["data"]
+    assert prev["dry_run"] is True
+    assert prev["imported_count"] == 1
+    assert prev["updated_count"] == 1
+    assert prev["merged_count"] >= 1
+    assert len(prev["new_sites"]) == 1
+    assert prev["new_sites"][0]["site_group"] == "智能导入组"
+    assert prev["new_sites"][0]["has_mcp_token"] is True
+    assert prev["new_sites"][0]["has_import_token"] is True
+    assert len(prev["updated_sites"]) == 1
+    assert prev["updated_sites"][0]["name"] == "beta"
+    assert prev["updated_sites"][0]["has_explicit_mcp_token"] is True
+    raw_prev_dump = json.dumps(prev)
+    assert "omega-mcp-tok-888" not in raw_prev_dump
+    assert "omega-imp-tok-777" not in raw_prev_dump
+    assert "beta-mcp-new-999" not in raw_prev_dump
+    # Disk untouched during dry_run
+    omega_name = prev["new_sites"][0]["name"]
+    assert not any(s.name == omega_name for s in load_config(cfg_path))
+    assert next(s for s in load_config(cfg_path) if s.name == "beta").mcp_token == ""
+
+    # Confirm save (dry_run=False) -> creates omega & upserts beta
+    r_save = requests.post(
+        f"{base}/api/sites/bulk-import",
+        json={"text": smart_paste, "dry_run": False, "default_group": "智能导入组"},
+        timeout=3,
+    )
+    assert r_save.status_code == 200
+    saved_data = r_save.json()["data"]
+    assert saved_data["dry_run"] is False
+    assert saved_data["imported_count"] == 1
+    assert saved_data["updated_count"] == 1
+
+    sites_after = {s.name: s for s in load_config(cfg_path)}
+    assert omega_name in sites_after
+    assert sites_after[omega_name].site_title == "anqicms-omega"
+    assert sites_after[omega_name].fid == 0
+    assert sites_after[omega_name].site_group == "智能导入组"
+    assert sites_after[omega_name].mcp_token == "omega-mcp-tok-888"
+    assert "omega-imp-tok-777" in sites_after[omega_name].jiekou
+    assert sites_after["beta"].mcp_token == "beta-mcp-new-999"
+    assert sites_after["beta"].fid == 2
+    assert sites_after["beta"].site_group == "集团B"
+
+    # Auto-discover preserves explicit site_title, backfills fid/category_name (when fid==0), and persists current_version
+    def _omega_discover(target_sites, **kwargs):
+        out = []
+        progress = kwargs.get("progress")
+        for idx, s in enumerate(target_sites, start=1):
+            discovered_title = "Gamma 官网" if "gamma" in s.name else "Omega 官网"
+            res = types.SimpleNamespace(
+                site_name=s.name,
+                site_url=s.url,
+                reachable=True,
+                http_status=200,
+                site_title=discovered_title,
+                discovered_title=discovered_title,
+                link_count=3,
+                mcp_ok=True,
+                mcp_tools=("check_update",),
+                current_version="3.7.2",
+                default_fid=12,
+                default_category_name="行业资讯",
+                message="探测成功",
+            )
+            out.append(res)
+            if callable(progress):
+                progress(idx, len(target_sites), res)
+        return out
+
+    monkeypatch.setattr(web_env["app"], "_discover_fn", _omega_discover)
+    r_disc = requests.post(
+        f"{base}/api/sites/discover",
+        json={"site_names": [omega_name], "probe_mcp": True, "backfill_titles": True},
+        timeout=3,
+    )
+    assert r_disc.status_code == 200
+    disc_job = _poll_job(base, r_disc.json()["data"]["job_id"])
+    assert disc_job["status"] == "completed"
+    assert omega_name not in disc_job["result"]["titles_backfilled"]
+    assert omega_name in disc_job["result"]["fids_backfilled"]
+
+    omega_after = next(s for s in load_config(cfg_path) if s.name == omega_name)
+    assert omega_after.site_title == "anqicms-omega"
+    assert omega_after.fid == 12
+    assert omega_after.category_name == "行业资讯"
+
+    cached_omega = web_env["app"].db.get_site_status(omega_name)
+    assert cached_omega is not None
+    assert cached_omega["current_version"] == "3.7.2"
+    assert cached_omega["link_count"] == 3
+    assert cached_omega["mcp_ok"] == 1
+
+    # Bare import URL (no site_title) -> auto-discover backfills site_title
+    r_gamma = requests.post(
+        f"{base}/api/sites/bulk-import",
+        json={
+            "text": "https://gamma.example.com/api/import/archive?token=gamma-imp-tok-111",
+            "dry_run": False,
+            "default_group": "智能导入组",
+        },
+        timeout=3,
+    )
+    assert r_gamma.status_code == 200
+    gamma_name = r_gamma.json()["data"]["new_sites"][0]["name"]
+    gamma_before = next(s for s in load_config(cfg_path) if s.name == gamma_name)
+    assert gamma_before.site_title == ""
+
+    r_disc_gamma = requests.post(
+        f"{base}/api/sites/discover",
+        json={"site_names": [gamma_name], "probe_mcp": True, "backfill_titles": True},
+        timeout=3,
+    )
+    assert r_disc_gamma.status_code == 200
+    disc_gamma = _poll_job(base, r_disc_gamma.json()["data"]["job_id"])
+    assert disc_gamma["status"] == "completed"
+    assert gamma_name in disc_gamma["result"]["titles_backfilled"]
+    gamma_after = next(s for s in load_config(cfg_path) if s.name == gamma_name)
+    assert gamma_after.site_title == "Gamma 官网"
+
+
+def test_friendlinks_parse_single_batch_search_audit_crosslink_and_export(web_env):
+    base = web_env["base_url"]
+
+    # Parse HTML & text preview
+    r_parse = requests.post(
+        f"{base}/api/friendlinks/parse",
+        json={
+            "text": '<a href="https://friend1.example.org" rel="nofollow">友链一</a>\n友链二|https://friend2.example.org\nbad line',
+            "default_nofollow": False,
+        },
+        timeout=3,
+    )
+    assert r_parse.status_code == 200
+    parsed = r_parse.json()["data"]
+    assert parsed["count"] == 2
+    assert parsed["specs"][0]["nofollow"] is True
+    assert parsed["specs"][1]["nofollow"] is False
+    assert len(parsed["errors"]) == 1
+
+    # GET /api/friendlinks/site/<name>
+    r_site_links = requests.get(f"{base}/api/friendlinks/site/alpha", timeout=3)
+    assert r_site_links.status_code == 200
+    assert r_site_links.json()["data"]["link_count"] == 2
+    assert web_env["app"].db.get_site_status("alpha")["link_count"] == 2
+
+    # Batch add (async job)
+    r_badd = requests.post(
+        f"{base}/api/friendlinks/batch-add",
+        json={
+            "site_names": ["beta"],
+            "text_or_specs": '<a href="https://newpartner.example.org">新伙伴</a>',
+            "skip_existing": True,
+            "nofollow": False,
+        },
+        timeout=3,
+    )
+    assert r_badd.status_code == 200
+    badd_job = _poll_job(base, r_badd.json()["data"]["job_id"])
+    assert badd_job["status"] == "completed"
+    assert badd_job["result"]["counts"]["created"] == 1
+
+    # Search (async job)
+    r_search = requests.post(
+        f"{base}/api/friendlinks/search",
+        json={"site_names": ["beta"], "query": "newpartner.example.org", "match_root_domain": True},
+        timeout=3,
+    )
+    assert r_search.status_code == 200
+    search_job = _poll_job(base, r_search.json()["data"]["job_id"])
+    assert search_job["status"] == "completed"
+    assert len(search_job["result"]["matches"]) == 1
+
+    # Batch remove (async job)
+    r_brem = requests.post(
+        f"{base}/api/friendlinks/batch-remove",
+        json={"site_names": ["beta"], "text_or_urls": ["https://newpartner.example.org/"]},
+        timeout=3,
+    )
+    assert r_brem.status_code == 200
+    brem_job = _poll_job(base, r_brem.json()["data"]["job_id"])
+    assert brem_job["status"] == "completed"
+    assert brem_job["result"]["counts"]["deleted"] == 1
+
+    # Audit backlinks (async job -> updates SiteGroupDB backlink_audit_history & broken_link_count)
+    r_audit = requests.post(
+        f"{base}/api/friendlinks/audit",
+        json={"site_names": ["alpha"], "whitelist_domains": []},
+        timeout=3,
+    )
+    assert r_audit.status_code == 200
+    audit_job = _poll_job(base, r_audit.json()["data"]["job_id"])
+    assert audit_job["status"] == "completed"
+    assert audit_job["result"]["summary"]["ok"] == 1
+    assert audit_job["result"]["summary"]["unreachable"] == 1
+    assert web_env["app"].db.get_site_status("alpha")["broken_link_count"] == 1
+    audits = web_env["app"].db.list_backlink_audits(site_name="alpha")
+    assert len(audits) == 2
+
+    # Crosslink preview + execute (fingerprint validation & cached existing_by_site reuse!)
+    r_prev = requests.post(
+        f"{base}/api/friendlinks/crosslink/preview",
+        json={"mode": "mesh", "site_names": ["alpha", "beta"], "bidirectional": True},
+        timeout=3,
+    )
+    assert r_prev.status_code == 200
+    prev_data = r_prev.json()["data"]
+    assert prev_data["counts"]["planned"] == 2
+    fp = prev_data["fingerprint"]
+
+    # Reject wrong fingerprint
+    r_bad_exec = requests.post(
+        f"{base}/api/friendlinks/crosslink/execute",
+        json={"fingerprint": "wrong-fingerprint"},
+        timeout=3,
+    )
+    assert r_bad_exec.status_code == 409
+
+    # Valid execute reuses cached existing_by_site (no extra /api/friendlink/list GET calls!)
+    get_count_before = len(web_env["state"]["get_calls"])
+    r_exec = requests.post(
+        f"{base}/api/friendlinks/crosslink/execute",
+        json={"fingerprint": fp},
+        timeout=3,
+    )
+    assert r_exec.status_code == 200
+    exec_job = _poll_job(base, r_exec.json()["data"]["job_id"])
+    assert exec_job["status"] == "completed"
+    assert exec_job["result"]["result_counts"]["created"] == 2
+    list_calls_during_exec = [
+        u for u in web_env["state"]["get_calls"][get_count_before:] if "/api/friendlink/list" in u
+    ]
+    assert list_calls_during_exec == []
+
+    # History & Rollback
+    r_hist = requests.get(f"{base}/api/friendlinks/crosslink/history", timeout=3)
+    assert r_hist.status_code == 200
+    plans = r_hist.json()["data"]["plans"]
+    assert len(plans) == 1
+    plan_id = plans[0]["plan_id"]
+    assert plans[0]["created_count"] == 2
+
+    r_rb = requests.post(
+        f"{base}/api/friendlinks/crosslink/rollback",
+        json={"plan_id": plan_id},
+        timeout=3,
+    )
+    assert r_rb.status_code == 200
+    rb_job = _poll_job(base, r_rb.json()["data"]["job_id"])
+    assert rb_job["status"] == "completed"
+    assert rb_job["result"]["counts"]["deleted"] == 2
+
+    # Export HTML
+    r_exp = requests.post(
+        f"{base}/api/friendlinks/export-html",
+        json={"site_names": ["alpha"], "include_nofollow": True},
+        timeout=3,
+    )
+    assert r_exp.status_code == 200
+    assert '<a href="https://alpha.example.com/"' in r_exp.json()["data"]["html"]
+    assert 'rel="nofollow"' in r_exp.json()["data"]["html"]
+
+
+def test_upgrade_check_confirm_guard_and_run(web_env):
+    base = web_env["base_url"]
+
+    # Check versions
+    r_chk = requests.post(f"{base}/api/upgrade/check", json={}, timeout=3)
+    assert r_chk.status_code == 200
+    chk_job = _poll_job(base, r_chk.json()["data"]["job_id"])
+    assert chk_job["status"] == "completed"
+    assert chk_job["result"]["updates_available"] == 1
+    assert web_env["app"].db.get_site_status("alpha")["update_available"] == 1
+
+    # Confirm guard
+    r_no_confirm = requests.post(
+        f"{base}/api/upgrade/run",
+        json={"site_names": ["alpha"], "confirmed": False},
+        timeout=3,
+    )
+    assert r_no_confirm.status_code == 400
+    assert r_no_confirm.json()["ok"] is False
+
+    # Stub _probe_http_home so wait_until_healthy passes without real HTTP
+    web_env["app"].upgrade_service._probe_http_home = lambda _site: True
+    r_run = requests.post(
+        f"{base}/api/upgrade/run",
+        json={"site_names": ["alpha"], "confirmed": True, "canary": True, "concurrency": 2, "stop_on_failure": True},
+        timeout=3,
+    )
+    assert r_run.status_code == 200
+    run_job = _poll_job(base, r_run.json()["data"]["job_id"])
+    assert run_job["status"] == "completed"
+    assert run_job["result"]["items"][0]["status"] == UPGRADE_UPGRADED
+    assert web_env["app"].db.get_site_status("alpha")["current_version"] == "3.6.8"
+    assert web_env["app"].db.get_site_status("alpha")["update_available"] == 0
+
+
+def test_admin_jump_settings_hot_reload_publish_audit_and_mcp(web_env, monkeypatch):
+    base = web_env["base_url"]
+    app = web_env["app"]
+
+    # Admin jump returns active AdminProxyServer URL
+    r_jump = requests.post(
+        f"{base}/api/admin/jump",
+        json={"site_name": "alpha", "open_browser": False},
+        timeout=3,
+    )
+    assert r_jump.status_code == 200
+    jump_data = r_jump.json()["data"]
+    assert jump_data["site_name"] == "alpha"
+    assert jump_data["tier"] == "bridge"
+    assert jump_data["opened"] is False
+    assert ".localhost:" in jump_data["url"]
+    assert app.admin_proxy.is_running is True
+    assert app.admin_proxy.port > 0
+
+    # Settings get + hot-reload PUT
+    r_set_get = requests.get(f"{base}/api/settings", timeout=3)
+    assert r_set_get.status_code == 200
+    assert r_set_get.json()["data"]["mcp"]["verify_ssl"] is True
+
+    r_set_put = requests.put(
+        f"{base}/api/settings",
+        json={"mcp": {"verify_ssl": False, "read_timeout": 42.0}, "friendlink": {"default_remark": "新互链"}},
+        timeout=3,
+    )
+    assert r_set_put.status_code == 200
+    assert app.settings.mcp.verify_ssl is False
+    assert app.settings.mcp.read_timeout == 42.0
+    assert app.friendlink_service.settings.friendlink.default_remark == "新互链"
+    assert app.upgrade_service._settings.mcp.verify_ssl is False
+    assert app.admin_jump_service.settings.mcp.verify_ssl is False
+    assert app.admin_jump_service.proxy is app.admin_proxy
+
+    # Publish status & fabu.log tail redaction
+    fabu_log = web_env["tmp_path"] / "fabu.log"
+    fabu_log.write_text(
+        "2026-11-25 10:00:00 - INFO - 发布 https://alpha.example.com/api?token=alpha-import-tok-1111 成功\n",
+        encoding="utf-8",
+    )
+    r_pub_status = requests.get(f"{base}/api/publish/status", timeout=3)
+    assert r_pub_status.status_code == 200
+    assert r_pub_status.json()["data"]["running"] is False
+
+    r_pub_logs = requests.get(f"{base}/api/publish/logs?lines=50", timeout=3)
+    assert r_pub_logs.status_code == 200
+    logs = r_pub_logs.json()["data"]["lines"]
+    assert len(logs) == 1
+    assert "alpha-import-tok-1111" not in logs[0]
+    assert "***" in logs[0]
+
+    r_pub_stop = requests.post(f"{base}/api/publish/stop", json={}, timeout=3)
+    assert r_pub_stop.status_code == 200
+    assert r_pub_stop.json()["data"]["stopped"] is True
+
+    # MCP config endpoint
+    r_mcp_cfg = requests.get(f"{base}/api/mcp-config", timeout=3)
+    assert r_mcp_cfg.status_code == 200
+    mcp_cfg = r_mcp_cfg.json()["data"]
+    assert mcp_cfg["http_url"] == f"http://127.0.0.1:{web_env['server'].port}/mcp"
+    assert "mcp_server.py" in mcp_cfg["mcp_script"]
+    assert "anqicms-sitegroup" in mcp_cfg["streamable_http"]["mcpServers"]
+    assert "anqicms-sitegroup" in mcp_cfg["stdio"]["mcpServers"]
+
+    # Audit logs endpoint
+    r_audit_logs = requests.get(f"{base}/api/audit-logs?limit=20", timeout=3)
+    assert r_audit_logs.status_code == 200
+    assert len(r_audit_logs.json()["data"]["operations"]) >= 1
+
+    # Jobs list & HTTP cancel endpoint
+    gate = threading.Event()
+    started_ev = threading.Event()
+
+    def _slow_job(update_progress, cancel_event):
+        started_ev.set()
+        gate.wait(timeout=2.0)
+        return {"ok": True}
+
+    slow_rec = app.job_runner.submit("slow", "Slow Job", _slow_job)
+    assert started_ev.wait(timeout=2.0)
+    r_cancel = requests.post(f"{base}/api/jobs/{slow_rec.job_id}/cancel", json={}, timeout=3)
+    assert r_cancel.status_code == 200
+    assert r_cancel.json()["data"]["cancelled"] is True
+    gate.set()
+    _poll_job(base, slow_rec.job_id)
+
+    r_jobs = requests.get(f"{base}/api/jobs?limit=20", timeout=3)
+    assert r_jobs.status_code == 200
+    assert isinstance(r_jobs.json()["data"]["jobs"], list)
+
+    # POST /mcp JSON-RPC initialize + tools/list + notification
+    # If Wave 1's core.sitegroup_mcp_server is not yet merged in this workspace,
+    # provide a lightweight fake module matching the handle_jsonrpc(payload) contract.
+    if importlib.util.find_spec("core.sitegroup_mcp_server") is None:
+        fake_mod = types.ModuleType("core.sitegroup_mcp_server")
+
+        class _FakeSiteGroupMcpServer:
+            def __init__(self, config_path, settings=None, db=None, **kwargs) -> None:
+                self.config_path = config_path
+                self.settings = settings
+                self.db = db
+
+            def handle_jsonrpc(self, payload: dict[str, Any]):
+                method = payload.get("method")
+                req_id = payload.get("id")
+                if req_id is None or str(method).startswith("notifications/"):
+                    return None
+                if method == "initialize":
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "result": {
+                            "protocolVersion": "2025-06-18",
+                            "capabilities": {"tools": {}},
+                            "serverInfo": {"name": APP_NAME, "version": APP_VERSION},
+                        },
+                    }
+                if method == "tools/list":
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "result": {
+                            "tools": [
+                                {"name": "list_sites", "description": "List configured sites"}
+                            ]
+                        },
+                    }
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {"code": -32601, "message": "Method not found"},
+                }
+
+        fake_mod.SiteGroupMcpServer = _FakeSiteGroupMcpServer
+        monkeypatch.setitem(sys.modules, "core.sitegroup_mcp_server", fake_mod)
+
+    r_init = requests.post(
+        f"{base}/mcp",
+        json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+        timeout=3,
+    )
+    assert r_init.status_code == 200
+    init_body = r_init.json()
+    assert init_body["jsonrpc"] == "2.0"
+    assert init_body["id"] == 1
+    assert "serverInfo" in init_body["result"]
+
+    r_notif = requests.post(
+        f"{base}/mcp",
+        json={"jsonrpc": "2.0", "method": "notifications/initialized"},
+        timeout=3,
+    )
+    assert r_notif.status_code == 202
+    assert r_notif.text == ""
+
+    r_tools = requests.post(
+        f"{base}/mcp",
+        json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        timeout=3,
+    )
+    assert r_tools.status_code == 200
+    tools_body = r_tools.json()
+    assert tools_body["id"] == 2
+    assert isinstance(tools_body["result"]["tools"], list)
+    assert len(tools_body["result"]["tools"]) >= 1
+
+
+def test_app_self_update_check_and_apply_source_and_frozen(web_env, monkeypatch):
+    import dataclasses
+
+    base = web_env["base_url"]
+    app = web_env["app"]
+
+    @dataclasses.dataclass(frozen=True)
+    class _FakeAppUpdateInfo:
+        current_version: str
+        latest_version: str
+        update_available: bool
+        release_url: str
+        download_url: str
+        asset_name: str
+        sha256_url: str
+        release_notes: str
+        message: str = ""
+
+    fake_info = _FakeAppUpdateInfo(
+        current_version="2.0.0",
+        latest_version="2.1.0",
+        update_available=True,
+        release_url="https://github.com/zaomeng/anqicms-manager/releases/tag/v2.1.0",
+        download_url="https://github.com/zaomeng/anqicms-manager/releases/download/v2.1.0/anqicms%E7%AB%99%E7%BE%A4%E6%8E%A7%E5%88%B6%E5%8F%B0.exe",
+        asset_name="anqicms站群控制台.exe",
+        sha256_url="https://github.com/zaomeng/anqicms-manager/releases/download/v2.1.0/SHA256SUMS-web.txt",
+        release_notes="### v2.1.0\n- 支持一键自更新",
+        message="发现新版本 v2.1.0",
+    )
+
+    monkeypatch.setattr(app, "_update_check_fn", lambda **_kw: fake_info)
+
+    # 1. GET /api/app/update/check
+    r_chk = requests.get(f"{base}/api/app/update/check", timeout=3)
+    assert r_chk.status_code == 200
+    chk_payload = r_chk.json()
+    assert chk_payload["ok"] is True
+    assert chk_payload["data"]["current_version"] == "2.0.0"
+    assert chk_payload["data"]["latest_version"] == "2.1.0"
+    assert chk_payload["data"]["update_available"] is True
+    assert chk_payload["data"]["release_url"] == fake_info.release_url
+
+    # 2. POST /api/app/update/apply in Python source mode (non-frozen)
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    r_apply_src = requests.post(f"{base}/api/app/update/apply", json={}, timeout=3)
+    assert r_apply_src.status_code == 200
+    job_src = _poll_job(base, r_apply_src.json()["data"]["job_id"])
+    assert job_src["status"] == "completed"
+    res_src = job_src["result"]
+    assert res_src["source_mode"] is True
+    assert res_src["applied"] is False
+    assert res_src["release_url"] == fake_info.release_url
+    assert res_src["download_url"] == fake_info.download_url
+    assert "源码运行模式" in res_src["message"]
+
+    # 3. POST /api/app/update/apply in mocked frozen EXE mode
+    downloaded_exe = web_env["tmp_path"] / "downloaded.exe"
+    downloaded_exe.write_bytes(b"MZ-fake-exe")
+    fake_script = web_env["tmp_path"] / "replace.bat"
+    fake_script.write_text("@echo off\r\n", encoding="utf-8")
+
+    called: dict[str, Any] = {"launched": False, "stopped": False, "exited": []}
+
+    fake_updater = types.ModuleType("core.self_updater")
+    fake_updater.check_app_update = lambda **_kw: fake_info
+    fake_updater.download_and_verify_update = lambda *a, **kw: downloaded_exe
+
+    def _create_script(new_exe, target_exe, **kw):
+        called["new_exe"] = Path(new_exe)
+        called["target_exe"] = Path(target_exe)
+        return fake_script
+
+    def _launch_script(script_path):
+        called["launched"] = Path(script_path)
+
+    fake_updater.create_windows_replace_script = _create_script
+    fake_updater.launch_replace_script = _launch_script
+    import core
+
+    monkeypatch.setitem(sys.modules, "core.self_updater", fake_updater)
+    monkeypatch.setattr(core, "self_updater", fake_updater, raising=False)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(web_env["tmp_path"] / "anqicms站群控制台.exe"))
+
+    exit_ev = threading.Event()
+    monkeypatch.setattr(app, "_server_stop_fn", lambda: called.__setitem__("stopped", True))
+    monkeypatch.setattr(
+        app,
+        "_exit_fn",
+        lambda code=0: (called["exited"].append(code), exit_ev.set()),
+    )
+
+    r_apply_exe = requests.post(f"{base}/api/app/update/apply", json={}, timeout=3)
+    assert r_apply_exe.status_code == 200
+    job_exe = _poll_job(base, r_apply_exe.json()["data"]["job_id"])
+    assert job_exe["status"] == "completed"
+    res_exe = job_exe["result"]
+    assert res_exe["applied"] is True
+    assert res_exe["restarting"] is True
+    assert res_exe["source_mode"] is False
+    assert called["new_exe"] == downloaded_exe
+    assert called["launched"] == fake_script
+
+    assert exit_ev.wait(timeout=3.5)
+    assert called["stopped"] is True
+    assert called["exited"] == [0]

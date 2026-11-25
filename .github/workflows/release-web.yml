@@ -1,0 +1,70 @@
+name: Build and Release Web Console
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Optional release tag name (e.g. v2.0.1)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build and test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install --requirement requirements-build.lock pytest
+
+      - name: Run test suite
+        shell: pwsh
+        run: python -m pytest -q
+
+      - name: Build Windows executable with PyInstaller
+        shell: pwsh
+        run: pyinstaller --noconfirm --clean anqicms_web.spec
+
+      - name: Package zip and generate SHA256SUMS-web.txt
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exePath = "dist\anqicms站群控制台.exe"
+          $zipPath = "dist\anqicms站群控制台.zip"
+          $sumsPath = "dist\SHA256SUMS-web.txt"
+          if (-not (Test-Path -LiteralPath $exePath)) {
+            throw "Built executable not found: $exePath"
+          }
+          Compress-Archive -LiteralPath $exePath -DestinationPath $zipPath -Force
+          $lines = @($exePath, $zipPath) | ForEach-Object {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $_).Hash.ToLowerInvariant()
+            "$hash *$(Split-Path -Leaf $_)"
+          }
+          Set-Content -LiteralPath $sumsPath -Value $lines -Encoding utf8
+          Get-Content -LiteralPath $sumsPath
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/anqicms站群控制台.exe
+            dist/anqicms站群控制台.zip
+            dist/SHA256SUMS-web.txt

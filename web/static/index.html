@@ -1,0 +1,1313 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AnqiCMS 站群管理控制台</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Left Navigation Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+            <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+            <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+            <path d="M14 17.5h7M17.5 14v7"></path>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <div class="brand-title">AnqiCMS 站群</div>
+          <div class="brand-sub" id="app-version-label">Web Console</div>
+        </div>
+        <button type="button" class="icon-btn mobile-only" id="btn-sidebar-close" title="关闭导航">✕</button>
+      </div>
+
+      <nav class="sidebar-nav" id="nav-list" aria-label="主导航">
+        <button type="button" class="nav-item active" data-view="dashboard">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <rect x="3" y="3" width="8" height="9" rx="1.5"></rect>
+            <rect x="13" y="3" width="8" height="5" rx="1.5"></rect>
+            <rect x="13" y="10" width="8" height="11" rx="1.5"></rect>
+            <rect x="3" y="14" width="8" height="7" rx="1.5"></rect>
+          </svg>
+          <span class="nav-label">总览看板</span>
+          <span class="nav-badge hidden" id="badge-broken">0</span>
+        </button>
+
+        <button type="button" class="nav-item" data-view="friendlinks">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+          </svg>
+          <span class="nav-label">友链中心</span>
+        </button>
+
+        <button type="button" class="nav-item" data-view="upgrade">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M12 19V5"></path>
+            <path d="M5 12l7-7 7 7"></path>
+            <path d="M5 20h14"></path>
+          </svg>
+          <span class="nav-label">统一升级</span>
+          <span class="nav-badge hidden" id="badge-updates">0</span>
+        </button>
+
+        <button type="button" class="nav-item" data-view="sites">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <ellipse cx="12" cy="5" rx="8" ry="3"></ellipse>
+            <path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5"></path>
+            <path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"></path>
+          </svg>
+          <span class="nav-label">站点管理与导入</span>
+        </button>
+
+        <button type="button" class="nav-item" data-view="publish">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+          </svg>
+          <span class="nav-label">文章发布台</span>
+          <span class="nav-badge badge-live hidden" id="badge-publish">运行</span>
+        </button>
+
+        <button type="button" class="nav-item" data-view="settings">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <span class="nav-label">系统设置 &amp; MCP</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button type="button" class="job-summary-btn" id="sidebar-job-trigger">
+          <span class="status-dot" id="sidebar-job-dot"></span>
+          <span class="job-summary-text" id="sidebar-job-text">后台任务：空闲</span>
+        </button>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+          <div class="sidebar-meta" id="sidebar-site-meta">加载站点中...</div>
+          <button type="button" class="badge badge-neutral" id="sidebar-version-pill" style="border:none;cursor:pointer;" title="查看版本与检查程序更新">v2.0.0</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Column -->
+    <div class="main-shell">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button type="button" class="icon-btn mobile-only" id="btn-mobile-menu" title="打开菜单">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+          <div>
+            <h1 class="page-title" id="page-title">总览看板</h1>
+            <p class="page-subtitle" id="page-subtitle">集中监控站群健康、MCP 连通、版本与友链状态</p>
+          </div>
+        </div>
+
+        <div class="topbar-right">
+          <button type="button" class="pill-btn" id="topbar-version-pill" title="查看程序版本与 GitHub 自动更新">
+            <span class="mono" id="topbar-version-text">v2.0.0</span>
+          </button>
+
+          <button type="button" class="pill-btn" id="topbar-job-pill" title="查看后台任务队列">
+            <span class="status-dot" id="topbar-job-dot"></span>
+            <span id="topbar-job-label">无运行中任务</span>
+          </button>
+
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-all">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
+            刷新数据
+          </button>
+
+          <button type="button" class="icon-btn" id="btn-theme-toggle" title="切换深浅色主题">
+            <span id="theme-icon">🌙</span>
+          </button>
+        </div>
+      </header>
+
+      <main class="content-area">
+        <!-- ==================== 1. DASHBOARD ==================== -->
+        <section class="view-panel active" id="view-dashboard">
+          <div class="kpi-grid" id="dashboard-kpis">
+            <div class="kpi-card">
+              <div class="kpi-label">总站点数</div>
+              <div class="kpi-value" id="kpi-total-sites">0</div>
+              <div class="kpi-foot" id="kpi-enabled-sites">已启用 0 站</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">MCP 已连通</div>
+              <div class="kpi-value text-success" id="kpi-mcp-ok">0</div>
+              <div class="kpi-foot" id="kpi-mcp-fail">异常 0 站</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">可升级站点</div>
+              <div class="kpi-value text-info" id="kpi-updates">0</div>
+              <div class="kpi-foot">基于已检测版本</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">掉链告警数</div>
+              <div class="kpi-value text-danger" id="kpi-broken-links">0</div>
+              <div class="kpi-foot" id="kpi-total-links">已记录友链 0 条</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">今日已发 / 待发</div>
+              <div class="kpi-value" id="kpi-publish-pair">0 / 0</div>
+              <div class="kpi-foot" id="kpi-publish-state">发布队列空闲</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="toolbar">
+              <div class="toolbar-group">
+                <select class="input input-sm" id="dash-group-filter" aria-label="按分组筛选">
+                  <option value="">全部分组</option>
+                </select>
+                <select class="input input-sm" id="dash-status-filter" aria-label="按状态筛选">
+                  <option value="">全部状态</option>
+                  <option value="updatable">可升级</option>
+                  <option value="mcp_ok">MCP 正常</option>
+                  <option value="mcp_fail">MCP 异常</option>
+                  <option value="broken">有掉链告警</option>
+                  <option value="enabled">已启用发布</option>
+                </select>
+                <input type="search" class="input input-sm input-search" id="dash-search" placeholder="搜索站点名 / 标题 / 网址..." />
+                <button type="button" class="btn btn-ghost btn-sm" id="dash-select-all">全选</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="dash-select-none">全不选</button>
+                <span class="muted-text" id="dash-selected-count">已选 0 站</span>
+              </div>
+
+              <div class="toolbar-group">
+                <button type="button" class="btn btn-primary btn-sm" id="btn-dash-discover">一键全站探测</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-dash-probe">批量测 MCP</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-dash-batch-jump">批量免密跳后台</button>
+              </div>
+            </div>
+
+            <div class="table-wrap table-tall">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th class="col-check"><input type="checkbox" id="dash-master-check" aria-label="全选当前列表" /></th>
+                    <th>站点名 / 站点标题</th>
+                    <th>分组</th>
+                    <th>网址</th>
+                    <th>CMS 版本</th>
+                    <th>MCP 状态</th>
+                    <th>友链 / 掉链</th>
+                    <th>今日发布</th>
+                    <th class="col-actions">快捷操作</th>
+                  </tr>
+                </thead>
+                <tbody id="dash-table-body">
+                  <tr><td colspan="9" class="empty-cell">正在加载站点数据...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== 2. FRIENDLINKS ==================== -->
+        <section class="view-panel" id="view-friendlinks">
+          <div class="subtab-bar" role="tablist">
+            <button type="button" class="subtab-btn active" data-fl-tab="single">单站友链</button>
+            <button type="button" class="subtab-btn" data-fl-tab="batch">统一上下链</button>
+            <button type="button" class="subtab-btn" data-fl-tab="crosslink">站群互链</button>
+            <button type="button" class="subtab-btn" data-fl-tab="audit">全站反链巡检</button>
+            <button type="button" class="subtab-btn" data-fl-tab="search">全站查链</button>
+          </div>
+
+          <!-- 2.1 单站友链 -->
+          <div class="subtab-panel active" id="fl-panel-single">
+            <div class="card">
+              <div class="toolbar">
+                <div class="toolbar-group">
+                  <input type="search" class="input input-sm" id="fl-single-site-search" placeholder="快速过滤站点..." style="width:160px;" />
+                  <select class="input input-sm" id="fl-single-site-select" style="min-width:240px;"></select>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-fl-single-load">读取友链</button>
+                  <button type="button" class="btn btn-ghost btn-sm" id="btn-fl-single-jump">直跳后台</button>
+                </div>
+                <div class="toolbar-group">
+                  <span class="badge badge-neutral" id="fl-single-count">共 0 条</span>
+                </div>
+              </div>
+
+              <div class="split-vertical">
+                <div class="subcard">
+                  <div class="subcard-head">
+                    <div>
+                      <strong>智能粘贴上链</strong>
+                      <span class="muted-text">支持直接粘贴 HTML &lt;a&gt; 代码，或多行 标题|网址 / 网址 标题 / 纯网址</span>
+                    </div>
+                    <div class="inline-controls">
+                      <label class="checkbox-label">
+                        <input type="checkbox" id="fl-single-nofollow" />
+                        <span>默认 nofollow</span>
+                      </label>
+                      <input type="text" class="input input-sm" id="fl-single-remark" placeholder="备注（可选）" style="width:140px;" />
+                    </div>
+                  </div>
+                  <textarea class="textarea" id="fl-single-paste" rows="4" placeholder='示例：&#10;<a href="https://example.com" target="_blank">示例站点</a>&#10;伙伴站|https://partner.com|0|交换友链'></textarea>
+                  <div class="action-row">
+                    <button type="button" class="btn btn-secondary btn-sm" id="btn-fl-single-parse">识别预览</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="btn-fl-single-add">一键上链</button>
+                    <span class="muted-text" id="fl-single-parse-status"></span>
+                  </div>
+                  <div id="fl-single-parse-preview" class="preview-strip hidden"></div>
+                </div>
+
+                <div>
+                  <div class="toolbar compact-toolbar">
+                    <div class="toolbar-group">
+                      <button type="button" class="btn btn-ghost btn-sm" id="btn-fl-single-select-all">全选</button>
+                      <button type="button" class="btn btn-ghost btn-sm" id="btn-fl-single-select-none">全不选</button>
+                    </div>
+                    <div class="toolbar-group">
+                      <button type="button" class="btn btn-danger btn-sm" id="btn-fl-single-remove-selected">删除选中</button>
+                    </div>
+                  </div>
+                  <div class="table-wrap table-medium">
+                    <table class="data-table">
+                      <thead>
+                        <tr>
+                          <th class="col-check"><input type="checkbox" id="fl-single-master-check" aria-label="全选单站友链" /></th>
+                          <th>ID</th>
+                          <th>标题</th>
+                          <th>链接</th>
+                          <th>nofollow</th>
+                          <th>备注</th>
+                          <th>状态</th>
+                        </tr>
+                      </thead>
+                      <tbody id="fl-single-table-body">
+                        <tr><td colspan="7" class="empty-cell">请选择站点后读取友链</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2.2 统一上下链 -->
+          <div class="subtab-panel" id="fl-panel-batch">
+            <div class="two-col-layout">
+              <div class="card">
+                <div class="card-head">
+                  <h3>1. 选择目标站点</h3>
+                </div>
+                <div id="fl-batch-picker"></div>
+              </div>
+
+              <div class="card">
+                <div class="card-head">
+                  <h3>2. 输入或粘贴友链内容</h3>
+                </div>
+                <textarea class="textarea" id="fl-batch-input" rows="6" placeholder='支持混合粘贴：&#10;<a href="https://a.com" rel="nofollow">站点A</a>&#10;站点B|https://b.com&#10;https://c.com'></textarea>
+                <div class="form-row-inline">
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="fl-batch-skip-existing" checked />
+                    <span>跳过已存在（按域名去重）</span>
+                  </label>
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="fl-batch-nofollow" />
+                    <span>默认 nofollow</span>
+                  </label>
+                  <input type="text" class="input input-sm" id="fl-batch-remark" placeholder="统一备注（可选）" style="width:160px;" />
+                </div>
+                <div class="action-row">
+                  <button type="button" class="btn btn-secondary" id="btn-fl-batch-parse">识别预览</button>
+                  <button type="button" class="btn btn-primary" id="btn-fl-batch-add">批量上链</button>
+                  <button type="button" class="btn btn-danger" id="btn-fl-batch-remove">批量下链</button>
+                </div>
+
+                <div id="fl-batch-preview-box" class="subcard hidden" style="margin-top:12px;"></div>
+              </div>
+            </div>
+
+            <div class="card" style="margin-top:16px;">
+              <div class="card-head">
+                <h3>3. 批量执行结果</h3>
+                <div id="fl-batch-result-counts" class="inline-controls"></div>
+              </div>
+              <div class="table-wrap table-medium">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>站点</th>
+                      <th>操作</th>
+                      <th>标题</th>
+                      <th>链接</th>
+                      <th>结果状态</th>
+                      <th>说明</th>
+                    </tr>
+                  </thead>
+                  <tbody id="fl-batch-result-body">
+                    <tr><td colspan="6" class="empty-cell">执行批量上链或下链后在此显示实时结果</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2.3 站群互链 -->
+          <div class="subtab-panel" id="fl-panel-crosslink">
+            <div class="two-col-layout">
+              <div class="card">
+                <div class="card-head">
+                  <h3>1. 选择参与互链站点</h3>
+                </div>
+                <div id="fl-xl-picker"></div>
+              </div>
+
+              <div class="card">
+                <div class="card-head">
+                  <h3>2. 互链拓扑策略与参数</h3>
+                </div>
+                <div class="form-grid">
+                  <label class="field">
+                    <span>互链模式</span>
+                    <select class="input" id="fl-xl-mode">
+                      <option value="random_k">SEO 随机 K 度互链（推荐默认）</option>
+                      <option value="group_cross">跨组互链（group_cross）</option>
+                      <option value="ring">轮链（ring）</option>
+                      <option value="hub">主从星型（hub）</option>
+                      <option value="mesh">全网两两全互链（mesh）</option>
+                    </select>
+                  </label>
+
+                  <label class="field" id="fl-xl-k-wrap">
+                    <span>每站最大互链数 K</span>
+                    <input type="number" class="input" id="fl-xl-k" min="1" max="50" value="3" />
+                  </label>
+
+                  <label class="field hidden" id="fl-xl-hub-wrap">
+                    <span>主站（Hub）</span>
+                    <select class="input" id="fl-xl-hub"></select>
+                  </label>
+
+                  <label class="field hidden" id="fl-xl-group-a-wrap">
+                    <span>分组 A（留空自动跨所有分组）</span>
+                    <select class="input" id="fl-xl-group-a">
+                      <option value="">自动跨分组</option>
+                    </select>
+                  </label>
+
+                  <label class="field hidden" id="fl-xl-group-b-wrap">
+                    <span>分组 B（留空为其余站点）</span>
+                    <select class="input" id="fl-xl-group-b">
+                      <option value="">自动匹配其他分组</option>
+                    </select>
+                  </label>
+
+                  <label class="field">
+                    <span>备注前缀</span>
+                    <input type="text" class="input" id="fl-xl-remark" placeholder="站群互链" />
+                  </label>
+
+                  <label class="field">
+                    <span>随机种子（可选）</span>
+                    <input type="number" class="input" id="fl-xl-seed" placeholder="留空自动随机" />
+                  </label>
+                </div>
+
+                <div class="form-row-inline" style="margin-top:8px;">
+                  <label class="checkbox-label" id="fl-xl-bidirectional-wrap">
+                    <input type="checkbox" id="fl-xl-bidirectional" checked />
+                    <span>双向互链</span>
+                  </label>
+                  <label class="checkbox-label" id="fl-xl-avoid-reciprocal-wrap">
+                    <input type="checkbox" id="fl-xl-avoid-reciprocal" checked />
+                    <span>避免直接互指（降低交叉特征）</span>
+                  </label>
+                  <label class="checkbox-label" id="fl-xl-avoid-root-wrap">
+                    <input type="checkbox" id="fl-xl-avoid-root" checked />
+                    <span>避开同主域名</span>
+                  </label>
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="fl-xl-nofollow" />
+                    <span>添加 nofollow</span>
+                  </label>
+                </div>
+
+                <div class="action-row" style="margin-top:12px;">
+                  <button type="button" class="btn btn-secondary" id="btn-fl-xl-preview">生成预览计划</button>
+                  <button type="button" class="btn btn-primary" id="btn-fl-xl-execute" disabled title="需先生成与当前选择一致的预览计划">执行互链</button>
+                  <div class="divider-v"></div>
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="fl-xl-export-nofollow" />
+                    <span>导出带 nofollow</span>
+                  </label>
+                  <button type="button" class="btn btn-ghost" id="btn-fl-xl-export">导出所选站点换链 HTML</button>
+                </div>
+                <div class="muted-text" id="fl-xl-fp-hint" style="margin-top:6px;">请先点击「生成预览计划」以校验并锁定本次互链指纹。</div>
+              </div>
+            </div>
+
+            <div class="card" style="margin-top:16px;">
+              <div class="card-head">
+                <h3>3. 互链计划预览 / 执行明细</h3>
+                <div id="fl-xl-preview-summary" class="inline-controls"></div>
+              </div>
+              <div class="table-wrap table-medium">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>源站（出链方）</th>
+                      <th>目标站</th>
+                      <th>锚文本（轮换）</th>
+                      <th>目标链接</th>
+                      <th>nofollow</th>
+                      <th>备注</th>
+                      <th>状态</th>
+                      <th>说明</th>
+                    </tr>
+                  </thead>
+                  <tbody id="fl-xl-preview-body">
+                    <tr><td colspan="8" class="empty-cell">请配置策略并生成预览计划</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card" style="margin-top:16px;">
+              <div class="card-head">
+                <h3>4. 历史互链台账与回滚</h3>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-fl-xl-history-refresh">刷新台账</button>
+              </div>
+              <div class="table-wrap table-short">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>计划 ID</th>
+                      <th>模式</th>
+                      <th>创建时间</th>
+                      <th>涉及站点</th>
+                      <th>已创建</th>
+                      <th>已回滚</th>
+                      <th class="col-actions">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="fl-xl-history-body">
+                    <tr><td colspan="7" class="empty-cell">暂无互链台账记录</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2.4 全站反链巡检 -->
+          <div class="subtab-panel" id="fl-panel-audit">
+            <div class="two-col-layout">
+              <div class="card">
+                <div class="card-head">
+                  <h3>1. 巡检站点范围（不选则巡检全站）</h3>
+                </div>
+                <div id="fl-audit-picker"></div>
+              </div>
+              <div class="card">
+                <div class="card-head">
+                  <h3>2. 白名单域名与发起巡检</h3>
+                </div>
+                <label class="field">
+                  <span>白名单域名（每行一个或逗号分隔，匹配主域名免检）</span>
+                  <textarea class="textarea" id="fl-audit-whitelist" rows="5" placeholder="example.org&#10;official-partner.com"></textarea>
+                </label>
+                <div class="action-row" style="margin-top:12px;">
+                  <button type="button" class="btn btn-primary" id="btn-fl-audit-run">开始全站并发巡检</button>
+                </div>
+                <div id="fl-audit-errors" class="alert-box hidden" style="margin-top:12px;"></div>
+              </div>
+            </div>
+
+            <div class="card" style="margin-top:16px;">
+              <div class="toolbar">
+                <div class="toolbar-group" id="fl-audit-summary">
+                  <button type="button" class="filter-pill active" data-audit-filter="all">全部 0</button>
+                  <button type="button" class="filter-pill" data-audit-filter="missing">无反链 0</button>
+                  <button type="button" class="filter-pill" data-audit-filter="unreachable">不可达 0</button>
+                  <button type="button" class="filter-pill" data-audit-filter="nofollow">nofollow 0</button>
+                  <button type="button" class="filter-pill" data-audit-filter="ok">正常 0</button>
+                  <button type="button" class="filter-pill" data-audit-filter="whitelisted">白名单 0</button>
+                </div>
+                <div class="toolbar-group">
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-fl-audit-select-broken">全选掉链项</button>
+                  <button type="button" class="btn btn-ghost btn-sm" id="btn-fl-audit-select-none">取消选择</button>
+                  <button type="button" class="btn btn-danger btn-sm" id="btn-fl-audit-remove-selected">一键批量下掉所选掉链</button>
+                </div>
+              </div>
+              <div class="table-wrap table-tall">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th class="col-check"><input type="checkbox" id="fl-audit-master-check" aria-label="全选当前过滤行" /></th>
+                      <th>所属站点</th>
+                      <th>友链标题</th>
+                      <th>目标链接</th>
+                      <th>HTTP</th>
+                      <th>健康状态</th>
+                      <th>巡检说明</th>
+                    </tr>
+                  </thead>
+                  <tbody id="fl-audit-table-body">
+                    <tr><td colspan="7" class="empty-cell">点击「开始全站并发巡检」获取反链健康状态</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2.5 全站查链 -->
+          <div class="subtab-panel" id="fl-panel-search">
+            <div class="two-col-layout">
+              <div class="card">
+                <div class="card-head">
+                  <h3>1. 搜索站点范围（不选则搜索全站）</h3>
+                </div>
+                <div id="fl-search-picker"></div>
+              </div>
+              <div class="card">
+                <div class="card-head">
+                  <h3>2. 搜索条件</h3>
+                </div>
+                <div class="form-grid-1">
+                  <label class="field">
+                    <span>域名 / 链接关键词 / 标题 / 备注（留空拉取全部友链）</span>
+                    <input type="text" class="input" id="fl-search-query" placeholder="例如：partner.com 或 集团A" />
+                  </label>
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="fl-search-root-domain" checked />
+                    <span>按主域名匹配（自动归一 www / 子域名）</span>
+                  </label>
+                </div>
+                <div class="action-row" style="margin-top:12px;">
+                  <button type="button" class="btn btn-primary" id="btn-fl-search-run">全站搜索</button>
+                </div>
+                <div id="fl-search-errors" class="alert-box hidden" style="margin-top:12px;"></div>
+              </div>
+            </div>
+
+            <div class="card" style="margin-top:16px;">
+              <div class="toolbar">
+                <div class="toolbar-group">
+                  <span class="badge badge-neutral" id="fl-search-summary">命中 0 条</span>
+                  <button type="button" class="btn btn-ghost btn-sm" id="btn-fl-search-select-all">全选</button>
+                  <button type="button" class="btn btn-ghost btn-sm" id="btn-fl-search-select-none">全不选</button>
+                </div>
+                <div class="toolbar-group">
+                  <button type="button" class="btn btn-danger btn-sm" id="btn-fl-search-remove-selected">一键删除选中链接</button>
+                </div>
+              </div>
+              <div class="table-wrap table-tall">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th class="col-check"><input type="checkbox" id="fl-search-master-check" aria-label="全选搜索结果" /></th>
+                      <th>所属站点</th>
+                      <th>友链标题</th>
+                      <th>链接</th>
+                      <th>主域名</th>
+                      <th>nofollow</th>
+                      <th>备注</th>
+                    </tr>
+                  </thead>
+                  <tbody id="fl-search-table-body">
+                    <tr><td colspan="7" class="empty-cell">输入关键词并点击「全站搜索」</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== 3. UPGRADE ==================== -->
+        <section class="view-panel" id="view-upgrade">
+          <div class="two-col-layout">
+            <div class="card">
+              <div class="card-head">
+                <h3>1. 选择检测 / 升级站点（不选则检测全站）</h3>
+              </div>
+              <div id="upg-picker"></div>
+            </div>
+            <div class="card">
+              <div class="card-head">
+                <h3>2. 版本检测与灰度升级选项</h3>
+              </div>
+              <div class="action-row">
+                <button type="button" class="btn btn-secondary" id="btn-upg-check">批量检测版本</button>
+                <button type="button" class="btn btn-ghost" id="btn-upg-probe">批量测 MCP</button>
+              </div>
+              <div class="divider-h"></div>
+              <div class="form-grid">
+                <label class="field">
+                  <span>升级并发数（1–5）</span>
+                  <input type="number" class="input" id="upg-concurrency" min="1" max="5" value="3" />
+                </label>
+                <div class="field" style="justify-content:flex-end;">
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="upg-canary" checked />
+                    <span>金丝雀先行（先升第 1 站验证健康再并发）</span>
+                  </label>
+                  <label class="checkbox-label" style="margin-top:6px;">
+                    <input type="checkbox" id="upg-stop-fail" checked />
+                    <span>失败即停（金丝雀或任一站失败后中止余下站）</span>
+                  </label>
+                </div>
+              </div>
+              <div class="action-row" style="margin-top:12px;">
+                <button type="button" class="btn btn-primary" id="btn-upg-run">升级选中站点</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:16px;">
+            <div class="card-head">
+              <h3>3. 版本与升级状态矩阵</h3>
+              <div id="upg-summary" class="inline-controls"></div>
+            </div>
+            <div class="table-wrap table-tall">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>站点名</th>
+                    <th>当前版本</th>
+                    <th>最新版本</th>
+                    <th>状态</th>
+                    <th>通道 / 工具</th>
+                    <th>耗时</th>
+                    <th>结果与指引提示（Hint）</th>
+                  </tr>
+                </thead>
+                <tbody id="upg-table-body">
+                  <tr><td colspan="7" class="empty-cell">请点击「批量检测版本」或查看缓存版本</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== 4. SITES MANAGEMENT ==================== -->
+        <section class="view-panel" id="view-sites">
+          <div class="subtab-bar" role="tablist">
+            <button type="button" class="subtab-btn active" data-sites-tab="list">站点列表与编辑</button>
+            <button type="button" class="subtab-btn" data-sites-tab="assign">批量赋值（老站）</button>
+            <button type="button" class="subtab-btn" data-sites-tab="import">批量导入新站</button>
+          </div>
+
+          <!-- 4.1 站点列表与编辑 -->
+          <div class="subtab-panel active" id="sites-panel-list">
+            <div class="sites-split">
+              <div class="card">
+                <div class="toolbar">
+                  <div class="toolbar-group">
+                    <select class="input input-sm" id="sites-group-filter">
+                      <option value="">全部分组</option>
+                    </select>
+                    <select class="input input-sm" id="sites-enabled-filter">
+                      <option value="">全部启用状态</option>
+                      <option value="true">仅已启用</option>
+                      <option value="false">仅未启用</option>
+                    </select>
+                    <input type="search" class="input input-sm" id="sites-search" placeholder="搜索站点..." />
+                  </div>
+                  <button type="button" class="btn btn-primary btn-sm" id="btn-site-new">+ 新增站点</button>
+                </div>
+                <div class="table-wrap table-tall">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>站点名</th>
+                        <th>站点标题</th>
+                        <th>分组</th>
+                        <th>网址</th>
+                        <th>凭据</th>
+                        <th>状态</th>
+                      </tr>
+                    </thead>
+                    <tbody id="sites-table-body">
+                      <tr><td colspan="6" class="empty-cell">加载中...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="card" id="site-editor-card">
+                <div class="card-head">
+                  <h3 id="site-editor-title">新增 / 编辑站点</h3>
+                  <button type="button" class="btn btn-danger btn-sm hidden" id="btn-site-delete">删除站点</button>
+                </div>
+                <form id="site-form" class="site-form">
+                  <div class="form-grid">
+                    <label class="field">
+                      <span>站点标识（name）*</span>
+                      <input type="text" class="input" id="sf-name" required placeholder="例如 site_alpha" />
+                    </label>
+                    <label class="field">
+                      <span>站点分组（site_group）</span>
+                      <input type="text" class="input" id="sf-group" placeholder="例如 集团A" />
+                    </label>
+                    <label class="field field-full">
+                      <span>站点标题（site_title）<em class="field-hint">支持 词1|词2|词3 互链锚文本轮换</em></span>
+                      <input type="text" class="input" id="sf-title" placeholder="例如 主站标题|备用锚文本1|备用锚文本2" />
+                    </label>
+                    <label class="field field-full">
+                      <span>站点网址（url）</span>
+                      <input type="text" class="input" id="sf-url" placeholder="https://example.com" />
+                    </label>
+                    <label class="field field-full">
+                      <span>发布导入接口（jiekou，支持直接粘贴带 token 完整导入 URL）</span>
+                      <input type="text" class="input" id="sf-jiekou" placeholder="留空保留原有接口；或填写 https://site.com/api/import/archive?token=..." />
+                      <small class="muted-text" id="sf-jiekou-masked"></small>
+                    </label>
+                    <label class="field">
+                      <span>MCP Token（留空保持不变）</span>
+                      <input type="password" class="input" id="sf-mcp-token" autocomplete="new-password" placeholder="输入新 Token 以替换" />
+                      <label class="checkbox-label small-check">
+                        <input type="checkbox" id="sf-clear-mcp" />
+                        <span>清空 MCP Token</span>
+                      </label>
+                    </label>
+                    <label class="field">
+                      <span>后台路径（admin_path）</span>
+                      <input type="text" class="input" id="sf-admin-path" placeholder="/system/" />
+                    </label>
+                    <label class="field">
+                      <span>后台账号（admin_username）</span>
+                      <input type="text" class="input" id="sf-admin-user" placeholder="admin" />
+                    </label>
+                    <label class="field">
+                      <span>后台密码（留空保持不变）</span>
+                      <input type="password" class="input" id="sf-admin-pass" autocomplete="new-password" placeholder="输入新密码以替换" />
+                      <label class="checkbox-label small-check">
+                        <input type="checkbox" id="sf-clear-pass" />
+                        <span>清空后台密码</span>
+                      </label>
+                    </label>
+                    <label class="field">
+                      <span>默认栏目 ID（fid，0=仅站群管理）</span>
+                      <input type="number" class="input" id="sf-fid" min="0" value="0" />
+                    </label>
+                    <label class="field">
+                      <span>每日发布上限（daily_publish_limit）</span>
+                      <input type="number" class="input" id="sf-limit" min="0" value="60" />
+                    </label>
+                    <label class="field">
+                      <span>发布间隔秒数（interval_time）</span>
+                      <input type="number" class="input" id="sf-interval" min="0" value="60" />
+                    </label>
+                    <label class="field">
+                      <span>定时发布点（publish_time）</span>
+                      <input type="text" class="input" id="sf-pubtime" placeholder="06:00:00" />
+                    </label>
+                  </div>
+                  <div class="form-row-inline" style="margin-top:8px;">
+                    <label class="checkbox-label">
+                      <input type="checkbox" id="sf-enabled" />
+                      <span>启用定时文章发布（enabled）</span>
+                    </label>
+                  </div>
+                  <div class="action-row" style="margin-top:12px;">
+                    <button type="submit" class="btn btn-primary" id="btn-site-save">保存站点配置</button>
+                    <button type="button" class="btn btn-ghost" id="btn-site-reset">重置为新增</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4.2 批量赋值（老站） -->
+          <div class="subtab-panel" id="sites-panel-assign">
+            <div class="two-col-layout">
+              <div class="card">
+                <div class="card-head">
+                  <h3>1. 选择需要批量赋值的老站</h3>
+                </div>
+                <div id="sites-assign-picker"></div>
+              </div>
+
+              <div class="card">
+                <div class="card-head">
+                  <h3>2. 统一赋值字段（留空保持原值不变）</h3>
+                </div>
+                <div class="form-grid">
+                  <label class="field">
+                    <span>站点分组（site_group）</span>
+                    <input type="text" class="input" id="ba-group" placeholder="留空不修改" />
+                  </label>
+                  <label class="field">
+                    <span>站点标题（site_title）</span>
+                    <input type="text" class="input" id="ba-title" placeholder="留空不修改" />
+                  </label>
+                  <label class="field">
+                    <span>MCP Token</span>
+                    <input type="password" class="input" id="ba-mcp-token" placeholder="留空不修改" />
+                  </label>
+                  <label class="field">
+                    <span>后台路径（admin_path）</span>
+                    <input type="text" class="input" id="ba-admin-path" placeholder="如 /system/，留空不修改" />
+                  </label>
+                  <label class="field">
+                    <span>后台账号（admin_username）</span>
+                    <input type="text" class="input" id="ba-admin-user" placeholder="留空不修改" />
+                  </label>
+                  <label class="field">
+                    <span>后台密码（admin_password）</span>
+                    <input type="password" class="input" id="ba-admin-pass" placeholder="留空不修改" />
+                  </label>
+                  <label class="field">
+                    <span>默认栏目 ID（fid）</span>
+                    <input type="number" class="input" id="ba-fid" min="0" placeholder="留空不修改" />
+                  </label>
+                  <label class="field">
+                    <span>每日发布上限</span>
+                    <input type="number" class="input" id="ba-limit" min="0" placeholder="留空不修改" />
+                  </label>
+                  <label class="field">
+                    <span>启用状态（enabled）</span>
+                    <select class="input" id="ba-enabled">
+                      <option value="">不修改</option>
+                      <option value="true">设为启用</option>
+                      <option value="false">设为停用</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="action-row" style="margin-top:12px;">
+                  <button type="button" class="btn btn-primary" id="btn-sites-assign-apply">应用批量赋值</button>
+                </div>
+
+                <div class="divider-h"></div>
+                <div class="card-head" style="padding:0;border:none;margin-bottom:8px;">
+                  <h3>文本逐行匹配更新（可选高级模式）</h3>
+                </div>
+                <textarea class="textarea" id="ba-text-input" rows="4" placeholder="格式：站点标识或域名|分组|MCP_Token|后台账号|后台密码|站点名称|后台路径"></textarea>
+                <div class="action-row" style="margin-top:8px;">
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-sites-text-preview">预览文本匹配</button>
+                  <button type="button" class="btn btn-primary btn-sm" id="btn-sites-text-apply">执行文本更新</button>
+                </div>
+                <div id="sites-assign-result" class="subcard hidden" style="margin-top:12px;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4.3 批量导入新站 -->
+          <div class="subtab-panel" id="sites-panel-import">
+            <div class="card">
+              <div class="card-head">
+                <h3>智能粘贴导入（直接粘贴 AnqiCMS MCP JSON 和 导入接口 URL）</h3>
+                <span class="muted-text">支持纯站群管理（默认 fid=0，不开启自动发布）</span>
+              </div>
+              <p class="muted-text" style="margin-bottom:10px;">
+                支持单站或多站混贴：直接贴 AnqiCMS「一键复制 MCP JSON」和「导入接口 URL」，自动按域名合并；已存在站点自动补全 Token/接口；导入后默认自动抓取标题、栏目、版本、MCP 与友链数。
+              </p>
+              <div class="form-grid" style="margin-bottom:10px;">
+                <label class="field">
+                  <span>默认分组（可选）</span>
+                  <input type="text" class="input" id="importDefaultGroup" placeholder="留空则不指定默认分组，例如：集团A" />
+                </label>
+              </div>
+              <textarea
+                class="textarea"
+                id="sites-import-text"
+                rows="10"
+                placeholder='示例（可直接混贴 AnqiCMS 一键复制 MCP JSON 与导入接口 URL）：&#10;{&#10;  "mcpServers": {&#10;    "anqicms-alpha": {&#10;      "url": "https://alpha.example.com/mcp",&#10;      "headers": { "Authorization": "Bearer mcp-token-xxx" }&#10;    }&#10;  }&#10;}&#10;https://alpha.example.com/api/import/archive?token=import-token-yyy&#10;&#10;也兼容传统多行格式：站点名|网址或导入接口|分组|MCP_Token|后台账号|后台密码|站点名称'
+              ></textarea>
+              <div class="form-row-inline" style="margin-top:10px;">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="sites-import-auto-discover" checked />
+                  <span>导入后立即自动探测标题/栏目/版本/MCP</span>
+                </label>
+              </div>
+              <div class="action-row" style="margin-top:10px;">
+                <button type="button" class="btn btn-secondary" id="btn-sites-import-preview">预览导入</button>
+                <button type="button" class="btn btn-primary" id="btn-sites-import-confirm">确认入库</button>
+              </div>
+
+              <div id="sites-import-preview-box" class="hidden" style="margin-top:14px;">
+                <div class="subcard-head" id="sites-import-preview-summary"></div>
+                <div class="table-wrap table-short">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>操作</th>
+                        <th>站点名</th>
+                        <th>站点标题</th>
+                        <th>网址</th>
+                        <th>MCP Token</th>
+                        <th>导入接口</th>
+                        <th>分组</th>
+                      </tr>
+                    </thead>
+                    <tbody id="importPreviewBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== 5. PUBLISH ==================== -->
+        <section class="view-panel" id="view-publish">
+          <div class="card">
+            <div class="toolbar">
+              <div class="toolbar-group">
+                <span class="badge badge-neutral" id="pub-status-badge">已停止</span>
+                <span class="muted-text" id="pub-stats-bar">今日尚未启动批量任务</span>
+              </div>
+              <div class="toolbar-group">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="pub-allow-disabled" />
+                  <span>允许包含未启用站点</span>
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" id="pub-auto-refresh" checked />
+                  <span>运行中自动刷新</span>
+                </label>
+                <button type="button" class="btn btn-primary btn-sm" id="btn-pub-start">启动发布</button>
+                <button type="button" class="btn btn-danger btn-sm" id="btn-pub-stop">停止发布</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-pub-refresh">刷新</button>
+              </div>
+            </div>
+
+            <div class="subcard" style="margin-bottom:14px;">
+              <div class="subcard-head">
+                <strong>可选：限定发布站点（留空则按已启用站群自动调度）</strong>
+              </div>
+              <div id="pub-picker"></div>
+            </div>
+
+            <div class="table-wrap table-medium">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>站点名</th>
+                    <th>队列状态</th>
+                    <th>待发文章</th>
+                    <th>库存总数</th>
+                    <th>今日已发 / 上限</th>
+                    <th>剩余配额</th>
+                    <th>诊断 / 错误</th>
+                  </tr>
+                </thead>
+                <tbody id="pub-table-body">
+                  <tr><td colspan="7" class="empty-cell">加载发布状态中...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:16px;">
+            <div class="card-head">
+              <div>
+                <h3>实时发布日志（Tail）</h3>
+                <small class="muted-text" id="pub-log-file"></small>
+              </div>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-pub-logs-refresh">刷新日志</button>
+            </div>
+            <pre class="log-console" id="pub-log-lines">暂无发布日志</pre>
+          </div>
+        </section>
+
+        <!-- ==================== 6. SETTINGS & MCP ==================== -->
+        <section class="view-panel" id="view-settings">
+          <div class="card" id="app-update-card" style="margin-bottom:16px;">
+            <div class="card-head">
+              <div>
+                <h3>程序版本与 GitHub 自动更新</h3>
+                <small class="muted-text">
+                  当前版本：<span class="mono" id="app-update-current-ver">v2.0.0</span>
+                  · GitHub 仓库：<a id="app-update-repo-link" href="https://github.com/zaomeng/anqicms-manager/releases" target="_blank" rel="noopener noreferrer">zaomeng/anqicms-manager</a>
+                </small>
+              </div>
+              <div class="inline-controls">
+                <span class="badge badge-neutral" id="app-update-status-badge">尚未检查更新</span>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-app-update-check">检查程序更新</button>
+                <button type="button" class="btn btn-primary btn-sm" id="btn-app-update-apply" disabled>一键下载并自动更新</button>
+              </div>
+            </div>
+            <div id="app-update-detail" class="subcard hidden">
+              <div class="subcard-head">
+                <strong id="app-update-latest-title">版本更新说明</strong>
+                <a id="app-update-release-link" href="https://github.com/zaomeng/anqicms-manager/releases" target="_blank" rel="noopener noreferrer" class="muted-text hidden">前往 GitHub Release 页面 ↗</a>
+              </div>
+              <pre class="code-box" id="app-update-notes" style="max-height:180px;"></pre>
+            </div>
+          </div>
+
+          <div class="two-col-layout">
+            <div class="card">
+              <div class="card-head">
+                <div>
+                  <h3>集成高级设置（即时保存并热重载）</h3>
+                  <small class="muted-text" id="settings-path-label"></small>
+                </div>
+                <div class="inline-controls">
+                  <button type="button" class="btn btn-ghost btn-sm" id="btn-settings-reload">还原服务器值</button>
+                  <button type="submit" form="settings-form" class="btn btn-primary btn-sm" id="btn-settings-save">保存并热重载</button>
+                </div>
+              </div>
+
+              <form id="settings-form">
+                <h4 class="settings-section-title">MCP 协议与连接</h4>
+                <div class="form-grid">
+                  <label class="field">
+                    <span>MCP 路径（endpoint_path）</span>
+                    <input type="text" class="input" id="set-mcp-endpoint" required />
+                  </label>
+                  <label class="field">
+                    <span>协议版本（protocol_version）</span>
+                    <input type="text" class="input" id="set-mcp-proto" required />
+                  </label>
+                  <label class="field">
+                    <span>连接超时秒（connect_timeout）</span>
+                    <input type="number" step="0.1" min="0.1" class="input" id="set-mcp-connect" required />
+                  </label>
+                  <label class="field">
+                    <span>读取超时秒（read_timeout）</span>
+                    <input type="number" step="0.1" min="0.1" class="input" id="set-mcp-read" required />
+                  </label>
+                  <label class="field field-full">
+                    <span>回退协议版本（每行或逗号分隔）</span>
+                    <input type="text" class="input" id="set-mcp-fallback" />
+                  </label>
+                  <label class="checkbox-label field-full">
+                    <input type="checkbox" id="set-mcp-ssl" />
+                    <span>验证 HTTPS 证书（verify_ssl）</span>
+                  </label>
+                </div>
+
+                <h4 class="settings-section-title">友链并发与默认参数</h4>
+                <div class="form-grid">
+                  <label class="field">
+                    <span>最大并发（max_concurrency）</span>
+                    <input type="number" min="1" class="input" id="set-fl-conc" required />
+                  </label>
+                  <label class="field">
+                    <span>单次请求间隔秒（per_request_delay_s）</span>
+                    <input type="number" step="0.05" min="0" class="input" id="set-fl-delay" required />
+                  </label>
+                  <label class="field">
+                    <span>接口超时秒（request_timeout）</span>
+                    <input type="number" step="0.5" min="0.5" class="input" id="set-fl-req-timeout" required />
+                  </label>
+                  <label class="field">
+                    <span>反链探测超时秒（check_timeout）</span>
+                    <input type="number" step="0.5" min="0.5" class="input" id="set-fl-chk-timeout" required />
+                  </label>
+                  <label class="field">
+                    <span>默认备注（default_remark）</span>
+                    <input type="text" class="input" id="set-fl-remark" />
+                  </label>
+                  <label class="checkbox-label" style="align-self:end;">
+                    <input type="checkbox" id="set-fl-nofollow" />
+                    <span>默认添加 nofollow</span>
+                  </label>
+                </div>
+
+                <h4 class="settings-section-title">免密跳后台（Admin Jump）</h4>
+                <div class="form-grid">
+                  <label class="field">
+                    <span>批量确认阈值（batch_confirm_threshold）</span>
+                    <input type="number" min="1" class="input" id="set-aj-thresh" required />
+                  </label>
+                  <label class="field">
+                    <span>单批上限（batch_max）</span>
+                    <input type="number" min="1" class="input" id="set-aj-max" required />
+                  </label>
+                  <label class="field">
+                    <span>批量打开间隔毫秒（batch_stagger_ms）</span>
+                    <input type="number" min="0" class="input" id="set-aj-stagger" required />
+                  </label>
+                  <label class="field">
+                    <span>桥接会话有效期秒（bridge_ttl_s）</span>
+                    <input type="number" step="1" min="1" class="input" id="set-aj-ttl" required />
+                  </label>
+                  <label class="field field-full">
+                    <span>登录接口探测路径（login_api_paths，逗号或换行分隔）</span>
+                    <input type="text" class="input" id="set-aj-login-paths" />
+                  </label>
+                  <label class="field field-full">
+                    <span>Ticket URL 模板（ticket_url_template，可选）</span>
+                    <input type="text" class="input" id="set-aj-ticket-tpl" placeholder="如 {admin_url}?ticket={ticket}" />
+                  </label>
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="set-aj-ticket" />
+                    <span>启用 MCP Ticket 跳转</span>
+                  </label>
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="set-aj-silent" />
+                    <span>启用静默登录反代</span>
+                  </label>
+                </div>
+
+                <h4 class="settings-section-title">统一升级（Upgrade）</h4>
+                <div class="form-grid">
+                  <label class="field">
+                    <span>默认升级并发（max_concurrency）</span>
+                    <input type="number" min="1" max="5" class="input" id="set-upg-conc" required />
+                  </label>
+                  <label class="field">
+                    <span>升级调用超时秒（upgrade_call_timeout_s）</span>
+                    <input type="number" step="1" min="1" class="input" id="set-upg-call-timeout" required />
+                  </label>
+                  <label class="field">
+                    <span>重启等待秒（restart_wait_s）</span>
+                    <input type="number" step="1" min="0" class="input" id="set-upg-restart-wait" required />
+                  </label>
+                  <label class="field">
+                    <span>健康巡检超时秒（health_timeout_s）</span>
+                    <input type="number" step="1" min="1" class="input" id="set-upg-health-timeout" required />
+                  </label>
+                  <label class="field">
+                    <span>健康巡检间隔秒（health_interval_s）</span>
+                    <input type="number" step="0.5" min="0.5" class="input" id="set-upg-health-interval" required />
+                  </label>
+                </div>
+              </form>
+            </div>
+
+            <div class="stack-col">
+              <div class="card">
+                <div class="card-head">
+                  <h3>MCP 一键接入（AI 客户端配置）</h3>
+                </div>
+                <div class="mcp-block">
+                  <div class="mcp-block-head">
+                    <strong>Streamable HTTP MCP（本地服务直连）</strong>
+                    <button type="button" class="btn btn-secondary btn-sm" id="btn-copy-mcp-http">复制 JSON</button>
+                  </div>
+                  <div class="muted-text" id="mcp-http-url" style="margin-bottom:6px;"></div>
+                  <pre class="code-box" id="mcp-http-json">加载中...</pre>
+                </div>
+
+                <div class="mcp-block" style="margin-top:14px;">
+                  <div class="mcp-block-head">
+                    <strong>Stdio MCP（命令行进程拉起）</strong>
+                    <button type="button" class="btn btn-secondary btn-sm" id="btn-copy-mcp-stdio">复制 JSON</button>
+                  </div>
+                  <div class="muted-text" id="mcp-stdio-meta" style="margin-bottom:6px;"></div>
+                  <pre class="code-box" id="mcp-stdio-json">加载中...</pre>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-head">
+                  <h3>最近审计日志</h3>
+                  <div class="inline-controls">
+                    <select class="input input-sm" id="audit-log-category">
+                      <option value="">全部类别</option>
+                      <option value="site">站点管理</option>
+                      <option value="friendlink">友链中心</option>
+                      <option value="upgrade">统一升级</option>
+                      <option value="admin">跳后台</option>
+                      <option value="publish">文章发布</option>
+                      <option value="settings">系统设置</option>
+                    </select>
+                    <button type="button" class="btn btn-ghost btn-sm" id="btn-audit-logs-refresh">刷新</button>
+                  </div>
+                </div>
+                <div class="table-wrap table-short">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>时间</th>
+                        <th>类别 / 动作</th>
+                        <th>站点</th>
+                        <th>状态</th>
+                        <th>摘要</th>
+                      </tr>
+                    </thead>
+                    <tbody id="audit-logs-body">
+                      <tr><td colspan="5" class="empty-cell">暂无审计日志</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- Non-blocking Floating Job Progress Dock -->
+  <div class="job-dock hidden" id="job-dock">
+    <div class="job-dock-head" id="job-dock-header">
+      <div class="job-dock-title-wrap">
+        <span class="status-dot" id="job-dock-dot"></span>
+        <strong id="job-dock-title">后台任务</strong>
+        <span class="badge badge-neutral" id="job-dock-status">等待</span>
+      </div>
+      <div class="inline-controls">
+        <button type="button" class="btn btn-danger btn-sm hidden" id="btn-job-cancel">取消任务</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-job-toggle">收起</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-job-close" title="关闭面板">✕</button>
+      </div>
+    </div>
+
+    <div class="job-dock-body" id="job-dock-body">
+      <div class="progress-row">
+        <div class="progress-track">
+          <div class="progress-fill" id="job-dock-fill" style="width:0%;"></div>
+        </div>
+        <span class="progress-pct" id="job-dock-pct">0%</span>
+      </div>
+      <div class="job-dock-msg" id="job-dock-msg">准备就绪</div>
+      <div class="job-dock-logs" id="job-dock-logs"></div>
+      <div class="job-dock-history" id="job-dock-history"></div>
+    </div>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div class="modal-backdrop hidden" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="confirm-title">确认操作</h3>
+        <button type="button" class="icon-btn" id="confirm-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <p id="confirm-message"></p>
+        <div class="modal-detail hidden" id="confirm-detail"></div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn btn-ghost" id="confirm-cancel">取消</button>
+        <button type="button" class="btn btn-danger" id="confirm-ok">确认执行</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export HTML Modal -->
+  <div class="modal-backdrop hidden" id="export-modal" role="dialog" aria-modal="true" aria-labelledby="export-title">
+    <div class="modal-card modal-wide">
+      <div class="modal-head">
+        <h3 id="export-title">导出换链 HTML 代码</h3>
+        <button type="button" class="icon-btn" id="export-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="muted-text" id="export-count-text" style="margin-bottom:8px;"></p>
+        <textarea class="textarea code-textarea" id="export-html-text" rows="12" readonly></textarea>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn btn-ghost" id="export-close-btn">关闭</button>
+        <button type="button" class="btn btn-primary" id="btn-export-copy">一键复制 HTML</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Stack -->
+  <div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
