@@ -20,11 +20,12 @@
 
 ## 快速开始
 
-### 方式一：运行 Windows EXE（推荐）
+### 方式一：运行 Windows EXE（推荐，无需安装 Python）
 
-1. 前往 [GitHub Releases](https://github.com/zaomeng/anqicms-manager/releases) 下载最新版 `anqicms站群控制台.exe`（或 `anqicms站群控制台.zip`）。
-2. 将程序放入独立文件夹；如需从零配置，可复制本仓库的 [`config.example.ini`](config.example.ini) 为同目录下的 `config.ini` 并按需修改，或直接双击启动后在 Web 控制台「站点管理与导入」中批量粘贴导入。
-3. 双击 `anqicms站群控制台.exe`，程序会自动启动本地服务并打开控制台窗口。
+1. 前往 [GitHub Releases](https://github.com/zaomeng/anqicms-manager/releases) 下载最新版压缩包 **`anqicms-manager.zip`**（解压后得到 `anqicms-manager.exe`）或直接下载单文件 **`anqicms-manager.exe`**（已避开 AnqiCMS 建站程序 `anqicms.exe` 同名冲突）。
+2. 将程序放入你的站点配置目录（即包含 `config.ini` 的文件夹）；如需从零配置，可复制本仓库的 [`config.example.ini`](config.example.ini) 为同目录下的 `config.ini`，或直接双击启动后在 Web 控制台「站点管理与导入」中批量粘贴导入（支持直接混贴 AnqiCMS 后台复制的 `mcpServers` JSON 和 `/api/import/archive?token=...` 地址）。
+3. 双击运行，程序会自动启动本地 Web 服务并打开独立控制台窗口。
+4. 后续有新版本时，直接点击控制台右上角版本号或进入「系统设置 → 程序版本与 GitHub 自动更新」即可一键检查、校验并自动更新重启。
 
 ### 方式二：从源码运行
 
@@ -66,11 +67,27 @@ pip install -r requirements-build.lock
 pyinstaller --noconfirm --clean anqicms_web.spec
 ```
 
-### GitHub Actions 自动发布
+### GitHub Actions 自动发布新版本
 
-仓库配置了 `.github/workflows/release-web.yml`：
-- 推送 `v*` 标签（例如 `git tag v2.0.1 && git push origin v2.0.1`）或在 Actions 页面手动触发 `workflow_dispatch`。
-- 工作流会在 `windows-latest` 上安装依赖、运行 `python -m pytest -q`、执行 `pyinstaller --noconfirm --clean anqicms_web.spec` 打包，并自动生成 `anqicms站群控制台.zip` 与 `SHA256SUMS-web.txt` 上传至对应 GitHub Release。
+仓库已配置中文注释完整的云端构建工作流 [`.github/workflows/release-web.yml`](.github/workflows/release-web.yml)：
+
+1. **升级版本号**：修改 [`core/app_info.py`](core/app_info.py) 中的 `APP_VERSION`（例如改为 `"2.0.1"`）。
+2. **提交并推送版本标签**：
+   ```bash
+   git add .
+   git commit -m "release: v2.0.1"
+   git push origin main
+   git tag v2.0.1
+   git push origin v2.0.1
+   ```
+3. **自动构建上架**：GitHub Actions 会在 `windows-latest` 上自动安装依赖、运行 1,100+ 项核心与 Web 测试、通过 `anqicms_web.spec` 编译单文件 EXE，并自动生成 ZIP 与 `SHA256SUMS-web.txt` 发布到 [GitHub Releases](https://github.com/zaomeng/anqicms-manager/releases)。
+4. **手动触发**：也可以直接在仓库的 **Actions → 构建并发布 Web 控制台 EXE → Run workflow** 手动触发云端构建或补发 Release。
+
+## 文档索引
+
+- [Web 站群控制台与 MCP 使用说明](docs/Web站群控制台与MCP使用说明.md)（含远程挂机宝模式、免密跳后台、12 个内置 MCP 工具与 AI 接入配置）
+- [站群管理使用说明](docs/站群管理使用说明.md)（AnqiCMS 后台 Token 与开放意图配置说明）
+- [站群架构设计文档](docs/plans/2026-11-21-sitegroup-architecture.md)
 
 ## 安全与目录说明
 

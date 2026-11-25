@@ -110,7 +110,7 @@ def test_app_info_constants() -> None:
     assert APP_NAME == "AnqiCMS 站群管理工具"
     assert APP_VERSION == "2.0.0"
     assert GITHUB_REPO == "zaomeng/anqicms-manager"
-    assert APP_RELEASE_ASSET_NAME == "anqicms站群控制台.exe"
+    assert APP_RELEASE_ASSET_NAME == "anqicms-manager.exe"
     assert APP_CHECKSUM_ASSET_NAME == "SHA256SUMS-web.txt"
 
 

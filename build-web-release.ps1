@@ -11,8 +11,8 @@ $workDir = Join-Path $root ".omx\build-web-release"
 $candidateDir = Join-Path $root ".omx\dist-web-release"
 $specFile = Join-Path $root "anqicms_web.spec"
 $staticDir = Join-Path $root "web\static"
-$exeName = "anqicms站群控制台.exe"
-$zipName = "anqicms站群控制台.zip"
+$exeName = "anqicms-manager.exe"
+$zipName = "anqicms-manager.zip"
 
 if (-not (Test-Path -LiteralPath $specFile)) {
     throw "PyInstaller spec file not found: $specFile"

@@ -1,56 +1,79 @@
-name: Build and Release Web Console
+# ==============================================================================
+# AnqiCMS 站群管理工具（Web 控制台）- GitHub 云端自动测试、打包与发布工作流
+#
+# 触发方式（二选一）：
+# 1. 自动发布：本地打版本标签并推送，例如：
+#      git tag v2.0.1 && git push origin v2.0.1
+# 2. 手动发布：在 GitHub 仓库页面点击 Actions -> 本工作流 -> Run workflow，
+#    可选填版本号标签（如 v2.0.1），留空则仅执行测试与打包验证、不创建 Release。
+#
+# 发布产物（自动上传至 GitHub Releases，供客户端「一键自动更新」下载校验）：
+# - anqicms-manager.exe（管理工具独立可执行文件，避免与 AnqiCMS 建站程序 anqicms.exe 重名冲突）
+# - anqicms-manager.zip（单文件 EXE 压缩发布包）
+# - SHA256SUMS-web.txt（安装包 SHA256 完整性校验文件）
+# ==============================================================================
+name: 构建并发布 Web 控制台 EXE
 
 on:
+  # 推送形如 v2.0.0 / v2.1.0 的版本标签时自动触发完整打包并发布 Release
   push:
     tags:
       - "v*"
+  # 允许在 GitHub Actions 页面手动点按钮触发构建或补发 Release
   workflow_dispatch:
     inputs:
       tag:
-        description: "Optional release tag name (e.g. v2.0.1)"
+        description: "可选：要发布的版本标签（例如 v2.0.1；留空则仅测试打包，不发布 Release）"
         required: false
         default: ""
 
+# 授予本工作流向当前仓库创建 Release 并上传产物的写权限
 permissions:
   contents: write
 
 jobs:
   build-and-release:
+    name: Windows 测试、打包并发布 Release
     runs-on: windows-latest
     steps:
-      - name: Checkout repository
+      - name: 1. 检出仓库源码
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
+      - name: 2. 安装 Python 3.12 运行环境
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install build and test dependencies
+      - name: 3. 安装锁定构建依赖与测试框架
         shell: pwsh
         run: |
+          # 使用仓库锁定的 requirements-build.lock，保证云端与本地打包依赖完全一致
           python -m pip install --upgrade pip
           pip install --requirement requirements-build.lock pytest
 
-      - name: Run test suite
+      - name: 4. 运行核心与 Web 自动化测试
         shell: pwsh
+        # 说明：GitHub Windows 云端环境无物理高分屏桌面，跳过 2 个依赖真实桌面尺寸的旧 Tkinter 烟测，
+        # 保留全部 1,100+ 项核心引擎、MCP、友链、升级、自更新与 Web 后端测试。
         run: python -m pytest -q --ignore=tests/test_main_window_smoke.py --ignore=tests/test_ui_kit_smoke.py
 
-      - name: Build Windows executable with PyInstaller
+      - name: 5. 使用 PyInstaller 打包单文件 Windows EXE
         shell: pwsh
         run: pyinstaller --noconfirm --clean anqicms_web.spec
 
-      - name: Package zip and generate SHA256SUMS-web.txt
+      - name: 6. 打包 ZIP 并生成 SHA256 校验文件
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $exePath = "dist\anqicms站群控制台.exe"
-          $zipPath = "dist\anqicms站群控制台.zip"
+          $exePath = "dist\anqicms-manager.exe"
+          $zipPath = "dist\anqicms-manager.zip"
           $sumsPath = "dist\SHA256SUMS-web.txt"
           if (-not (Test-Path -LiteralPath $exePath)) {
-            throw "Built executable not found: $exePath"
+            throw "未找到打包生成的 EXE 文件：$exePath"
           }
+          # 压缩单文件 EXE 为便于分发的 ZIP 包
           Compress-Archive -LiteralPath $exePath -DestinationPath $zipPath -Force
+          # 生成安装包与压缩包的 SHA256 校验文件，供客户端自动更新核验完整性
           $lines = @($exePath, $zipPath) | ForEach-Object {
             $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $_).Hash.ToLowerInvariant()
             "$hash *$(Split-Path -Leaf $_)"
@@ -58,13 +81,14 @@ jobs:
           Set-Content -LiteralPath $sumsPath -Value $lines -Encoding utf8
           Get-Content -LiteralPath $sumsPath
 
-      - name: Publish GitHub Release
+      - name: 7. 自动发布产物到 GitHub Releases
+        # 仅在推送 v* 标签或手动填写了 tag 参数时才创建/更新 Release
         if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           generate_release_notes: true
           files: |
-            dist/anqicms站群控制台.exe
-            dist/anqicms站群控制台.zip
+            dist/anqicms-manager.exe
+            dist/anqicms-manager.zip
             dist/SHA256SUMS-web.txt

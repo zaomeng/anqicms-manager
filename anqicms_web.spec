@@ -28,7 +28,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='anqicms站群控制台',
+    name='anqicms-manager',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

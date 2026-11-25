@@ -216,6 +216,7 @@ def parse_sha256sums(text: str, asset_name: str) -> str:
     target_cf = target_basename.casefold()
 
     casefold_fallback = ""
+    exe_digests: list[str] = []
     for raw_line in text.lstrip("\ufeff").splitlines():
         line = raw_line.strip().lstrip("\ufeff")
         if not line or line.startswith("#"):
@@ -235,7 +236,15 @@ def parse_sha256sums(text: str, asset_name: str) -> str:
             return digest
         if not casefold_fallback and entry_basename.casefold() == target_cf:
             casefold_fallback = digest
-    return casefold_fallback
+        if entry_basename.casefold().endswith(".exe") and digest not in exe_digests:
+            exe_digests.append(digest)
+    if casefold_fallback:
+        return casefold_fallback
+    # GitHub Releases sanitizes non-ASCII asset filenames (e.g. anqicms站群控制台.exe -> anqicms.exe);
+    # fall back to the sole .exe digest when target is an .exe and only one unique .exe hash exists.
+    if target_cf.endswith(".exe") and len(exe_digests) == 1:
+        return exe_digests[0]
+    return ""
 
 
 def check_app_update(
