@@ -108,7 +108,7 @@ def _sample_release_payload(
 
 def test_app_info_constants() -> None:
     assert APP_NAME == "AnqiCMS 站群管理工具"
-    assert APP_VERSION == "2.0.2"
+    assert APP_VERSION == "2.0.3"
     assert GITHUB_REPO == "zaomeng/anqicms-manager"
     assert APP_RELEASE_ASSET_NAME == "anqicms-manager.exe"
     assert APP_CHECKSUM_ASSET_NAME == "SHA256SUMS-web.txt"
@@ -566,3 +566,31 @@ def test_launch_replace_script_uses_detached_popen(
     assert kwargs["close_fds"] is True
     assert "creationflags" in kwargs
     assert kwargs["creationflags"] != 0
+
+
+def test_open_session_trusts_system_store_and_certifi_with_verification_on() -> None:
+    import ssl
+
+    from core import self_updater as su
+
+    sess, owns = su._open_session(None)
+    try:
+        assert owns is True
+        adapter = sess.get_adapter("https://api.github.com/")
+        assert isinstance(adapter, su._SystemTrustAdapter)
+        ctx = adapter._tls_context
+        assert ctx.verify_mode == ssl.CERT_REQUIRED
+        assert ctx.check_hostname is True
+        assert ctx.cert_store_stats()["x509_ca"] > 0
+    finally:
+        sess.close()
+
+
+def test_ssl_error_message_includes_manual_download_link() -> None:
+    import requests
+
+    from core import self_updater as su
+
+    msg = su._format_network_error("检查应用更新失败", requests.exceptions.SSLError("x"))
+    assert "证书校验失败" in msg
+    assert "releases/latest/download/anqicms-manager.zip" in msg

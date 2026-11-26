@@ -109,17 +109,61 @@ def _close_quietly(resource: Any) -> None:
             pass
 
 
+class _SystemTrustAdapter(requests.adapters.HTTPAdapter):
+    """HTTPAdapter whose TLS context trusts BOTH the OS certificate store and certifi.
+
+    Many Windows users run a local proxy / VPN / antivirus that re-signs HTTPS traffic with
+    a private root CA installed in the *Windows* store only. ``requests`` normally trusts
+    only certifi's bundle, which makes GitHub look "untrusted" (CERTIFICATE_VERIFY_FAILED).
+    Verification stays ON; we merely add the system trust anchors.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self._tls_context = _build_trust_context()
+        super().__init__(*args, **kwargs)
+
+    def init_poolmanager(self, *args: Any, **kwargs: Any) -> None:
+        kwargs["ssl_context"] = self._tls_context
+        super().init_poolmanager(*args, **kwargs)
+
+    def proxy_manager_for(self, proxy: str, **proxy_kwargs: Any) -> Any:
+        proxy_kwargs["ssl_context"] = self._tls_context
+        return super().proxy_manager_for(proxy, **proxy_kwargs)
+
+
+def _build_trust_context() -> Any:
+    import ssl
+
+    ctx = ssl.create_default_context()  # loads the Windows ROOT/CA stores on Windows
+    try:
+        import certifi
+
+        ctx.load_verify_locations(cafile=certifi.where())
+    except Exception:  # noqa: BLE001 - certifi is optional here
+        pass
+    return ctx
+
+
 def _open_session(session: Any) -> tuple[Any, bool]:
     if session is not None:
         return session, False
-    return requests.Session(), True
+    new_session = requests.Session()
+    try:
+        adapter = _SystemTrustAdapter()
+        new_session.mount("https://", adapter)
+    except Exception:  # noqa: BLE001 - fall back to requests' default TLS handling
+        pass
+    return new_session, True
 
 
 def _format_network_error(prefix: str, exc: Exception) -> str:
     if isinstance(exc, requests.Timeout):
         return f"{prefix}：请求超时，请检查网络连接后重试"
     if isinstance(exc, requests.exceptions.SSLError):
-        return f"{prefix}：HTTPS 证书校验失败"
+        return (
+            f"{prefix}：HTTPS 证书校验失败（可能被代理/VPN/杀毒软件拦截了 HTTPS）。"
+            "可手动下载最新版：https://github.com/zaomeng/anqicms-manager/releases/latest/download/anqicms-manager.zip"
+        )
     if isinstance(exc, requests.ConnectionError):
         return f"{prefix}：无法连接到服务器，请检查网络设置"
     return f"{prefix}：{exc}"

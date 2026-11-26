@@ -22,7 +22,7 @@
 
 ### 方式一：运行 Windows EXE（推荐，无需安装 Python）
 
-1. 前往 [GitHub Releases](https://github.com/zaomeng/anqicms-manager/releases) 下载最新版压缩包 **`anqicms-manager.zip`**（解压后得到 `anqicms-manager.exe`）或直接下载单文件 **`anqicms-manager.exe`**（已避开 AnqiCMS 建站程序 `anqicms.exe` 同名冲突）。
+1. 前往 [GitHub Releases](https://github.com/zaomeng/anqicms-manager/releases) 下载最新版（永久直链：[anqicms-manager.zip](https://github.com/zaomeng/anqicms-manager/releases/latest/download/anqicms-manager.zip) / [anqicms-manager.exe](https://github.com/zaomeng/anqicms-manager/releases/latest/download/anqicms-manager.exe)）压缩包 **`anqicms-manager.zip`**（解压后得到 `anqicms-manager.exe`）或直接下载单文件 **`anqicms-manager.exe`**（已避开 AnqiCMS 建站程序 `anqicms.exe` 同名冲突）。
 2. 将程序放入你的站点配置目录（即包含 `config.ini` 的文件夹）；如需从零配置，可复制本仓库的 [`config.example.ini`](config.example.ini) 为同目录下的 `config.ini`，或直接双击启动后在 Web 控制台「站点管理与导入」中批量粘贴导入（支持直接混贴 AnqiCMS 后台复制的 `mcpServers` JSON 和 `/api/import/archive?token=...` 地址）。
 3. 双击运行，程序会自动启动本地 Web 服务并打开独立控制台窗口。
 4. 后续有新版本时，直接点击控制台右上角版本号或进入「系统设置 → 程序版本与 GitHub 自动更新」即可一键检查、校验并自动更新重启。
