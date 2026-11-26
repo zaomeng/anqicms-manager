@@ -12,6 +12,7 @@ import mimetypes
 import os
 import re
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -30,12 +31,14 @@ from core.anqicms_mcp_client import AnqiMcpClient, probe_sites_batch
 from core.app_info import APP_NAME, APP_VERSION
 from core.archive_service import ArchiveService
 from core.category_keywords import CategoryKeywordsError, normalize_category_keywords
+from core.category_service import CategoryCache, CategoryService, CategoryServiceError
 from core.config_service import (
     SITE_GROUP_MAX_LENGTH,
     ConfigLoadError,
     load_config,
     save_config,
 )
+from core.content_service import parse_image_groups_content
 from core.friendlink_ledger import FriendLinkLedger, ledger_path
 from core.friendlink_service import (
     FriendLinkError,
@@ -43,7 +46,12 @@ from core.friendlink_service import (
     export_sites_html_links,
     parse_batch_link_input,
 )
-from core.gallery_service import GalleryService
+from core.gallery_service import (
+    Gallery,
+    GalleryError,
+    GalleryService,
+    validate_gallery_content,
+)
 from core.integration_settings import (
     AdminJumpSettings,
     FriendLinkSettings,
@@ -58,6 +66,7 @@ from core.mcp_contracts import McpClientFactory
 from core.publisher import Publisher
 from core.redaction import SecretRedactor, redact_text
 from core.runtime_paths import app_dir, bundled_dir, resolve_external_or_bundled
+import core.schedule_service as _schedule_service
 from core.schedule_service import is_valid_publish_time, normalize_publish_time
 from core.site_credentials import (
     admin_url,
@@ -91,7 +100,8 @@ except ImportError:
     parse_smart_site_import = None  # type: ignore[assignment]
 from core.site_service import SiteService
 from core.sitegroup_db import SiteGroupDB, db_path
-from core.state_store import StateFileError, get_published_count
+from core.startup_service import StartupPreferenceError, StartupService
+from core.state_store import StateFileError, atomic_write_text, get_published_count
 from core.task_manager import TaskManager
 from core.upgrade_service import UpgradeService
 from models.entities import PublishResult, SiteConfig, SiteStatusSummary
@@ -497,6 +507,7 @@ def _serialize_site(
     *,
     cached_status: Mapping[str, Any] | None = None,
     summary: SiteStatusSummary | None = None,
+    reveal_secrets: bool = False,
 ) -> dict[str, Any]:
     effective_token = effective_mcp_token(site)
     has_url = bool((site.url or "").strip())
@@ -518,11 +529,15 @@ def _serialize_site(
         "has_import_token": bool(import_token(site)),
         "fid": site.fid,
         "category_name": site.category_name,
-        "category_keywords": {str(k): list(v) for k, v in site.category_keywords.items()},
+        "category_keywords": {str(k): list(v) for k, v in (site.category_keywords or {}).items()},
         "publish_dir": str(site.publish_dir),
         "daily_publish_filename": str(site.daily_publish_filename),
         "publish_time": site.publish_time,
-        "publish_times": list(site.publish_times),
+        "publish_times": (
+            list(site.publish_times)
+            if site.publish_times
+            else ([site.publish_time] if site.publish_time else [])
+        ),
         "interval_time": site.interval_time,
         "daily_publish_limit": site.daily_publish_limit,
         "enabled": bool(site.enabled),
@@ -576,7 +591,97 @@ def _serialize_site(
                 "publish_error": summary.last_error,
             }
         )
+    if reveal_secrets:
+        data.update(
+            {
+                "jiekou": site.jiekou or "",
+                "mcp_token": site.mcp_token or "",
+                "admin_password": site.admin_password or "",
+            }
+        )
     return data
+
+
+def _serialize_gallery(gallery: Gallery) -> dict[str, Any]:
+    """Serialize a managed ``Gallery`` including parsed group and image counts."""
+    try:
+        content = gallery.file_path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeError):
+        content = ""
+    groups = parse_image_groups_content(content)
+    image_count = sum(len(urls) for urls in groups.values())
+    return {
+        "id": gallery.gallery_id,
+        "name": gallery.name,
+        "path": str(gallery.file_path),
+        "group_count": len(groups),
+        "image_count": image_count,
+        "content": content,
+    }
+
+
+def _parse_publish_times_input(raw_value: Any) -> list[str]:
+    """Parse comma/newline string or list of ``HH:MM:SS`` into normalized unique times."""
+    if isinstance(raw_value, str):
+        tokens = [
+            part.strip()
+            for part in re.split(r"[\r\n,，]+", raw_value)
+            if part.strip()
+        ]
+    elif isinstance(raw_value, (list, tuple)):
+        tokens = []
+        for item in raw_value:
+            if not isinstance(item, str):
+                raise ApiBadRequestError("publish_times 中的时间必须是字符串")
+            stripped = item.strip()
+            if stripped:
+                tokens.append(stripped)
+    else:
+        raise ApiBadRequestError("publish_times 必须是字符串或数组")
+
+    normalizer = getattr(_schedule_service, "normalize_publish_times", None)
+    if callable(normalizer):
+        try:
+            normalized = list(normalizer(tokens))
+        except ValueError as exc:
+            raise ApiBadRequestError(f"发布时间无效: {exc}") from exc
+    else:
+        normalized = []
+        for token in tokens:
+            if not is_valid_publish_time(token):
+                raise ApiBadRequestError(f"发布时间无效: {token}")
+            normalized.append(normalize_publish_time(token))
+    return list(dict.fromkeys(normalized))
+
+
+def _resolve_site_publish_endpoint(
+    site: SiteConfig,
+    payload: Mapping[str, Any] | None = None,
+) -> str:
+    """Resolve full ``http(s)://.../archive?token=...`` endpoint for category fetching."""
+    body = payload if isinstance(payload, Mapping) else {}
+    raw_full = str(body.get("full_endpoint") or "").strip()
+    if raw_full:
+        return raw_full
+
+    raw_url = str(body.get("url") if "url" in body else site.url or "").strip()
+    if "jiekou" in body and str(body.get("jiekou") or "").strip():
+        raw_jiekou = str(body["jiekou"]).strip()
+    elif "api_key" in body and str(body.get("api_key") or "").strip():
+        raw_jiekou = build_import_endpoint(str(body["api_key"]).strip())
+    else:
+        raw_jiekou = str(site.jiekou or "").strip()
+
+    if not raw_jiekou:
+        return ""
+    if raw_jiekou.casefold().startswith(("http://", "https://")):
+        return raw_jiekou
+    if not raw_url:
+        return ""
+    normalized_base = normalize_site_url(raw_url)
+    if raw_jiekou.startswith("/"):
+        return f"{normalized_base.rstrip('/')}{raw_jiekou}"
+    return f"{normalized_base.rstrip('/')}/{raw_jiekou}"
 
 
 def _serialize_friendlink(link: FriendLink) -> dict[str, Any]:
@@ -764,6 +869,9 @@ class WebConsoleApp:
         task_manager: TaskManager | None = None,
         archive_service: ArchiveService | None = None,
         gallery_service: GalleryService | None = None,
+        category_service: CategoryService | None = None,
+        category_cache: CategoryCache | None = None,
+        startup_service: StartupService | None = None,
         mcp_client_factory: McpClientFactory | None = None,
         probe_fn: Callable[..., list[McpProbeResult]] | None = None,
         discover_fn: Callable[..., list[SiteDiscoveryResult]] | None = None,
@@ -797,6 +905,13 @@ class WebConsoleApp:
         )
         self.gallery_service = gallery_service or GalleryService(
             self.config_path.parent / "设置"
+        )
+        self.category_service = category_service or CategoryService()
+        self.category_cache = category_cache or CategoryCache(
+            self.config_path.parent / "设置" / "category_cache.json"
+        )
+        self.startup_service = startup_service or StartupService(
+            preference_path=self.config_path.parent / "设置" / "startup_preference.json",
         )
         self.site_service = site_service or SiteService(archive_service=self.archive_service)
 
@@ -1397,6 +1512,7 @@ class WebConsoleApp:
         group: str = "",
         query: str = "",
         enabled: bool | None = None,
+        reveal_secrets: bool = False,
     ) -> dict[str, Any]:
         sites = self.load_sites()
         cached_map = {
@@ -1425,7 +1541,13 @@ class WebConsoleApp:
                 ).casefold()
                 if q_lower not in haystack:
                     continue
-            items.append(_serialize_site(site, cached_status=cached_map.get(site.name)))
+            items.append(
+                _serialize_site(
+                    site,
+                    cached_status=cached_map.get(site.name),
+                    reveal_secrets=reveal_secrets,
+                )
+            )
         return {"sites": items, "groups": groups, "total": len(items)}
 
     def upsert_site(self, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -1507,8 +1629,13 @@ class WebConsoleApp:
                 ("article_warning_threshold", "库存预警阈值"),
             ):
                 if int_field in payload and payload[int_field] is not None and payload[int_field] != "":
+                    raw_val = payload[int_field]
+                    if isinstance(raw_val, bool):
+                        raise ApiBadRequestError(f"{label}必须是整数")
                     try:
-                        val = int(payload[int_field])
+                        if isinstance(raw_val, float) and not raw_val.is_integer():
+                            raise ValueError("non-integer float")
+                        val = int(raw_val)
                     except (TypeError, ValueError) as exc:
                         raise ApiBadRequestError(f"{label}必须是整数") from exc
                     if val < 0:
@@ -1520,14 +1647,21 @@ class WebConsoleApp:
 
             if "category_name" in payload:
                 updates["category_name"] = str(payload.get("category_name") or "").strip()
-            if "gallery_id" in payload:
-                updates["gallery_id"] = str(payload.get("gallery_id") or "").strip()
             if "activation_date" in payload and str(payload.get("activation_date") or "").strip():
                 updates["activation_date"] = str(payload["activation_date"]).strip()
 
-            if "publish_dir" in payload and str(payload.get("publish_dir") or "").strip():
-                raw_dir = Path(str(payload["publish_dir"]).strip())
-                updates["publish_dir"] = raw_dir if raw_dir.is_absolute() else (base_dir / raw_dir).resolve()
+            if "publish_dir" in payload:
+                raw_pub_dir = payload.get("publish_dir")
+                if raw_pub_dir is not None and not isinstance(raw_pub_dir, str):
+                    raise ApiBadRequestError("文章目录必须是字符串")
+                pub_dir_text = str(raw_pub_dir or "").strip()
+                if pub_dir_text:
+                    if _has_control_chars(pub_dir_text):
+                        raise ApiBadRequestError("文章目录不能包含控制字符")
+                    raw_dir = Path(pub_dir_text)
+                    updates["publish_dir"] = (
+                        raw_dir if raw_dir.is_absolute() else (base_dir / raw_dir).resolve()
+                    )
             if "daily_publish_filename" in payload and str(payload.get("daily_publish_filename") or "").strip():
                 raw_daily = Path(str(payload["daily_publish_filename"]).strip())
                 updates["daily_publish_filename"] = (
@@ -1537,18 +1671,42 @@ class WebConsoleApp:
                 raw_img = str(payload.get("image_file") or "").strip()
                 if not raw_img:
                     updates["image_file"] = None
+                    if "gallery_id" not in payload:
+                        updates["gallery_id"] = ""
                 else:
                     img_path = Path(raw_img)
                     updates["image_file"] = img_path if img_path.is_absolute() else (base_dir / img_path).resolve()
 
-            if "publish_times" in payload and isinstance(payload["publish_times"], list):
-                raw_times = [str(t).strip() for t in payload["publish_times"] if str(t).strip()]
-                for t in raw_times:
-                    if not is_valid_publish_time(t):
-                        raise ApiBadRequestError(f"发布时间无效: {t}")
-                norm_times = [normalize_publish_time(t) for t in raw_times]
-                updates["publish_times"] = norm_times[:1]
-                updates["publish_time"] = norm_times[0] if norm_times else ""
+            if "gallery_id" in payload:
+                raw_gid = str(payload.get("gallery_id") or "").strip()
+                if raw_gid:
+                    try:
+                        gallery = self.gallery_service.require_gallery(raw_gid)
+                    except GalleryError as exc:
+                        raise ApiBadRequestError(str(exc)) from exc
+                    updates["gallery_id"] = gallery.gallery_id
+                    updates["image_file"] = gallery.file_path
+                else:
+                    updates["gallery_id"] = ""
+                    if "image_file" not in payload or not str(payload.get("image_file") or "").strip():
+                        updates["image_file"] = None
+
+            if "publish_times" in payload and payload["publish_times"] is not None:
+                norm_times = _parse_publish_times_input(payload["publish_times"])
+                if norm_times:
+                    updates["publish_times"] = norm_times
+                    updates["publish_time"] = norm_times[0]
+                else:
+                    raw_pt = str(payload.get("publish_time") or "").strip()
+                    if raw_pt:
+                        if not is_valid_publish_time(raw_pt):
+                            raise ApiBadRequestError(f"发布时间无效: {raw_pt}")
+                        norm_pt = normalize_publish_time(raw_pt)
+                        updates["publish_time"] = norm_pt
+                        updates["publish_times"] = [norm_pt]
+                    else:
+                        updates["publish_times"] = []
+                        updates["publish_time"] = ""
             elif "publish_time" in payload:
                 raw_pt = str(payload.get("publish_time") or "").strip()
                 if raw_pt:
@@ -3096,6 +3254,244 @@ class WebConsoleApp:
             "exists": exists,
         }
 
+    def get_publish_pending(self, site_name: str, *, limit: int = 50) -> dict[str, Any]:
+        """Scan pending ``.txt`` articles in ``site.publish_dir`` via ``SiteService``."""
+        site = self._find_site(site_name)
+        cap = max(1, min(200, int(limit)))
+        try:
+            articles = self.site_service.list_articles(site)
+        except (StateFileError, OSError) as exc:
+            raise ApiBadRequestError(self.redact_text(str(exc)) or "扫描待发文章失败") from exc
+
+        pending_articles = [article for article in articles if article.status == "pending"]
+        error_count = sum(1 for article in articles if article.status == "error")
+        return {
+            "site_name": site.name,
+            "publish_dir": str(site.publish_dir),
+            "default_fid": site.fid,
+            "count": len(pending_articles),
+            "total": len(pending_articles),
+            "error_count": error_count,
+            "items": [
+                {
+                    "filename": article.path.name,
+                    "title": article.title,
+                    "category_id": article.category_id,
+                    "keywords": article.keywords,
+                }
+                for article in pending_articles[:cap]
+            ],
+        }
+
+    # ------------------------------------------------------------------ categories, galleries & startup
+
+    def fetch_site_categories(
+        self,
+        site_name: str,
+        payload: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Fetch live hierarchical categories for ``site_name`` via ``CategoryService``."""
+        site = self._find_site(site_name)
+        full_endpoint = _resolve_site_publish_endpoint(site, payload)
+        if not full_endpoint:
+            raise ApiBadRequestError("站点缺少网址或发布接口，无法获取栏目")
+
+        try:
+            categories = self.category_service.fetch(full_endpoint)
+        except ValueError as exc:
+            raise ApiBadRequestError(
+                self.redact_text(redact_sensitive_url(str(exc))) or "发布接口格式无效"
+            ) from exc
+        except CategoryServiceError as exc:
+            raise ApiError(
+                self.redact_text(redact_sensitive_url(str(exc))) or "获取栏目失败",
+                status_code=502,
+            ) from exc
+
+        try:
+            self.category_cache.put(full_endpoint, categories)
+        except (OSError, ValueError):
+            pass
+
+        return {
+            "site_name": site.name,
+            "categories": [
+                {
+                    "id": category.id,
+                    "parent_id": category.parent_id,
+                    "title": category.title,
+                }
+                for category in categories
+            ],
+        }
+
+    def list_galleries(self) -> dict[str, Any]:
+        """Return all managed image galleries via ``GalleryService``."""
+        try:
+            galleries = self.gallery_service.list_galleries()
+        except GalleryError as exc:
+            raise ApiBadRequestError(str(exc)) from exc
+        items = [_serialize_gallery(gallery) for gallery in galleries]
+        return {"galleries": items, "total": len(items)}
+
+    def get_gallery(self, gallery_id: str) -> dict[str, Any]:
+        """Return a single managed image gallery by ``gallery_id``."""
+        target_id = str(gallery_id or "").strip()
+        if not target_id:
+            raise ApiBadRequestError("图库 ID 不能为空")
+        try:
+            gallery = self.gallery_service.get_gallery(target_id)
+        except GalleryError as exc:
+            raise ApiBadRequestError(str(exc)) from exc
+        if gallery is None:
+            raise ApiNotFoundError(f"图库不存在: {target_id}")
+        return _serialize_gallery(gallery)
+
+    def save_gallery(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        """Create or update a managed image gallery via ``GalleryService``."""
+        if not isinstance(payload, Mapping):
+            raise ApiBadRequestError("请求体必须是 JSON 对象")
+
+        gallery_id = str(payload.get("id") or "").strip()
+        has_name = "name" in payload
+        has_content = "content" in payload and payload.get("content") is not None
+
+        with self.config_lock:
+            if not gallery_id:
+                raw_name = payload.get("name")
+                raw_content = payload.get("content")
+                if not isinstance(raw_content, str):
+                    raise ApiBadRequestError("图库内容必须是文本")
+                try:
+                    with tempfile.TemporaryDirectory() as tmpdir:
+                        src_path = Path(tmpdir) / "gallery.txt"
+                        src_path.write_bytes(raw_content.encode("utf-8"))
+                        gallery = self.gallery_service.create_gallery(raw_name, src_path)
+                except GalleryError as exc:
+                    raise ApiBadRequestError(str(exc)) from exc
+                created = True
+            else:
+                try:
+                    existing = self.gallery_service.get_gallery(gallery_id)
+                except GalleryError as exc:
+                    raise ApiBadRequestError(str(exc)) from exc
+                if existing is None:
+                    raise ApiNotFoundError(f"图库不存在: {gallery_id}")
+
+                if has_content:
+                    raw_content = payload["content"]
+                    if not isinstance(raw_content, str):
+                        raise ApiBadRequestError("图库内容必须是文本")
+                    validation = validate_gallery_content(raw_content)
+                    if not validation.valid:
+                        raise ApiBadRequestError(validation.message)
+
+                gallery = existing
+                if has_name:
+                    raw_name = payload["name"]
+                    try:
+                        gallery = self.gallery_service.rename_gallery(gallery_id, raw_name)
+                    except GalleryError as exc:
+                        raise ApiBadRequestError(str(exc)) from exc
+
+                if has_content:
+                    try:
+                        atomic_write_text(gallery.file_path, payload["content"])
+                    except OSError as exc:
+                        raise ApiError(f"保存图库文件失败: {exc}", status_code=500) from exc
+                created = False
+
+        serialized = _serialize_gallery(gallery)
+        self._record_op_safe(
+            "gallery",
+            "create" if created else "update",
+            status="ok",
+            summary=f"{'新增' if created else '更新'}图库 {gallery.name}",
+            detail={"gallery_id": gallery.gallery_id, "image_count": serialized["image_count"]},
+        )
+        return {"created": created, "gallery": serialized}
+
+    def delete_gallery(self, gallery_id: str) -> dict[str, Any]:
+        """Delete an image gallery unless bound by one or more configured sites."""
+        target_id = str(gallery_id or "").strip()
+        if not target_id:
+            raise ApiBadRequestError("图库 ID 不能为空")
+
+        with self.config_lock:
+            sites = self.load_sites()
+            bound_sites = [
+                site.name
+                for site in sites
+                if (site.gallery_id or "").strip() == target_id
+            ]
+            if bound_sites:
+                raise ApiBadRequestError(
+                    f"图库正在被以下站点使用，不能删除: {', '.join(bound_sites)}"
+                )
+            try:
+                existing = self.gallery_service.get_gallery(target_id)
+            except GalleryError as exc:
+                raise ApiBadRequestError(str(exc)) from exc
+            if existing is None:
+                raise ApiNotFoundError(f"图库不存在: {target_id}")
+            try:
+                self.gallery_service.delete_gallery(
+                    target_id,
+                    referenced_gallery_ids=frozenset(
+                        site.gallery_id for site in sites if site.gallery_id
+                    ),
+                )
+            except GalleryError as exc:
+                raise ApiBadRequestError(str(exc)) from exc
+
+        self._record_op_safe(
+            "gallery",
+            "delete",
+            status="ok",
+            summary=f"删除图库 {existing.name}",
+            detail={"gallery_id": target_id},
+        )
+        return {"deleted": target_id}
+
+    def get_startup_status(self) -> dict[str, Any]:
+        """Return Windows auto-start support and current state via ``StartupService``."""
+        supported = bool(self.startup_service.supported)
+        enabled = False
+        if supported:
+            try:
+                enabled = bool(self.startup_service.is_enabled())
+            except (OSError, StartupPreferenceError) as exc:
+                raise ApiError(f"读取自启动状态失败: {exc}", status_code=500) from exc
+        return {"supported": supported, "enabled": enabled}
+
+    def set_startup_enabled(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        """Enable or disable Windows login auto-start via ``StartupService``."""
+        if not isinstance(payload, Mapping):
+            raise ApiBadRequestError("请求体必须是 JSON 对象")
+        raw_enabled = payload.get("enabled")
+        if not isinstance(raw_enabled, bool):
+            raise ApiBadRequestError("enabled 必须是布尔值")
+
+        try:
+            changed = self.startup_service.set_enabled(raw_enabled)
+            supported = bool(self.startup_service.supported)
+            enabled = bool(self.startup_service.is_enabled()) if supported else False
+        except (OSError, StartupPreferenceError) as exc:
+            raise ApiError(f"设置开机自启动失败: {exc}", status_code=500) from exc
+
+        self._record_op_safe(
+            "settings",
+            "startup_toggle",
+            status="ok",
+            summary=f"{'开启' if enabled else '关闭'}开机自启动",
+            detail={"supported": supported, "enabled": enabled, "changed": bool(changed)},
+        )
+        return {
+            "supported": supported,
+            "enabled": enabled,
+            "changed": bool(changed),
+        }
+
     # ------------------------------------------------------------------ settings & MCP
 
     def get_settings_data(self) -> dict[str, Any]:
@@ -3462,12 +3858,16 @@ class WebConsoleServer:
                 *,
                 content_type: str,
                 cache_control: str = "no-store",
+                extra_headers: Mapping[str, str] | None = None,
             ) -> None:
                 try:
                     self.send_response(status_code)
                     self.send_header("Content-Type", content_type)
                     self.send_header("Content-Length", str(len(body)))
                     self.send_header("Cache-Control", cache_control)
+                    if extra_headers:
+                        for header_name, header_value in extra_headers.items():
+                            self.send_header(header_name, header_value)
                     self.send_header("X-Content-Type-Options", "nosniff")
                     self.send_header("Referrer-Policy", "no-referrer")
                     self.end_headers()
@@ -3532,7 +3932,13 @@ class WebConsoleServer:
                 except OSError as exc:
                     self._send_error_json(500, f"读取静态资源失败: {exc}")
                     return
-                self._send_bytes(200, data, content_type=mime, cache_control="no-cache")
+                self._send_bytes(
+                    200,
+                    data,
+                    content_type=mime,
+                    cache_control="no-store, no-cache, must-revalidate, max-age=0",
+                    extra_headers={"Pragma": "no-cache"},
+                )
 
             def _handle_mcp(self, method: str) -> None:
                 if method != "POST":
@@ -3664,10 +4070,12 @@ class WebConsoleServer:
                             enabled_filter = True
                         elif enabled_raw in {"0", "false", "no"}:
                             enabled_filter = False
+                        reveal_secrets = self._q_str(query, "reveal").casefold() in {"1", "true", "yes"}
                         return app.list_sites(
                             group=self._q_str(query, "group"),
                             query=self._q_str(query, "q"),
                             enabled=enabled_filter,
+                            reveal_secrets=reveal_secrets,
                         )
                     if method == "POST":
                         return app.upsert_site(self._read_json_body(allow_empty=False))
@@ -3696,19 +4104,58 @@ class WebConsoleServer:
                     return {"job_id": job.job_id, "job": job.to_dict()}
 
                 if path.startswith("/api/sites/"):
-                    site_name = unquote(path[len("/api/sites/"):]).strip("/")
-                    if not site_name or "/" in site_name:
+                    raw_suffix = path[len("/api/sites/"):].strip("/")
+                    if not raw_suffix:
+                        raise ApiNotFoundError("API 路径不存在")
+                    segments = raw_suffix.split("/")
+                    if len(segments) == 2 and segments[1] == "categories":
+                        site_name = unquote(segments[0]).strip()
+                        if not site_name:
+                            raise ApiNotFoundError("API 路径不存在")
+                        if method != "POST":
+                            raise ApiError("不支持的请求方法", status_code=405)
+                        return app.fetch_site_categories(
+                            site_name,
+                            self._read_json_body(allow_empty=True),
+                        )
+                    if len(segments) != 1:
+                        raise ApiNotFoundError("API 路径不存在")
+                    site_name = unquote(segments[0]).strip()
+                    if not site_name:
                         raise ApiNotFoundError("API 路径不存在")
                     if method == "DELETE":
                         return app.delete_site(site_name)
                     if method == "GET":
                         site = app._find_site(site_name)
+                        reveal_secrets = self._q_str(query, "reveal").casefold() in {"1", "true", "yes"}
                         return {
                             "site": _serialize_site(
                                 site,
                                 cached_status=app.db.get_site_status(site.name),
+                                reveal_secrets=reveal_secrets,
                             )
                         }
+                    raise ApiError("不支持的请求方法", status_code=405)
+
+                # Image galleries
+                if path == "/api/galleries":
+                    if method == "GET":
+                        return app.list_galleries()
+                    if method == "POST":
+                        return app.save_gallery(self._read_json_body(allow_empty=False))
+                    raise ApiError("不支持的请求方法", status_code=405)
+
+                if path.startswith("/api/galleries/"):
+                    raw_gid = path[len("/api/galleries/"):].strip("/")
+                    if not raw_gid or "/" in raw_gid:
+                        raise ApiNotFoundError("API 路径不存在")
+                    gallery_id = unquote(raw_gid).strip()
+                    if not gallery_id:
+                        raise ApiNotFoundError("API 路径不存在")
+                    if method == "DELETE":
+                        return app.delete_gallery(gallery_id)
+                    if method == "GET":
+                        return {"gallery": app.get_gallery(gallery_id)}
                     raise ApiError("不支持的请求方法", status_code=405)
 
                 # Friendlinks
@@ -3815,6 +4262,28 @@ class WebConsoleServer:
                     if method != "GET":
                         raise ApiError("不支持的请求方法", status_code=405)
                     return app.get_publish_logs(lines=self._q_int(query, "lines", 200))
+
+                if path.startswith("/api/publish/pending/"):
+                    raw_name = path[len("/api/publish/pending/"):].strip("/")
+                    if not raw_name or "/" in raw_name:
+                        raise ApiNotFoundError("API 路径不存在")
+                    site_name = unquote(raw_name).strip()
+                    if not site_name:
+                        raise ApiNotFoundError("API 路径不存在")
+                    if method != "GET":
+                        raise ApiError("不支持的请求方法", status_code=405)
+                    return app.get_publish_pending(
+                        site_name,
+                        limit=self._q_int(query, "limit", 50),
+                    )
+
+                # System startup toggle
+                if path == "/api/system/startup":
+                    if method == "GET":
+                        return app.get_startup_status()
+                    if method == "POST":
+                        return app.set_startup_enabled(self._read_json_body(allow_empty=False))
+                    raise ApiError("不支持的请求方法", status_code=405)
 
                 # Settings & MCP config
                 if path == "/api/settings":

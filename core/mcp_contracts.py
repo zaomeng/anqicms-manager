@@ -15,7 +15,7 @@ from models.entities import SiteConfig
 from models.sitegroup import McpToolInfo, McpToolResult
 
 AUTH_HINT = "MCP Token 无效或未开启：后台 设置→安全设置 开启 API，设置→AI 统一配置 生成 Token"
-SCOPE_HINT = "请登录该站后台：设置→AI 统一配置→接口开放范围，勾选对应高危域（系统升级/多站点）后重试"
+SCOPE_HINT = "请登录该站后台：设置→AI 统一配置→接口开放范围/允许使用的工具，填写 *（或点选系统升级 siteops_upgrade）并提交后重试"
 REDIRECT_HINT = "接口发生重定向，请把站点网址改为 https://… 形式（含正确的 http/https）"
 SSL_HINT = "证书校验失败：请检查站点证书，或在 integration_settings.json 中关闭 mcp.verify_ssl"
 APPROVAL_HINT = (

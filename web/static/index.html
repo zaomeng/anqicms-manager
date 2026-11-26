@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>AnqiCMS 站群管理控制台</title>
-  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="/static/styles.css?v=2.0.1" />
 </head>
 <body>
   <div class="app-shell">
@@ -72,7 +72,7 @@
             <line x1="16" y1="13" x2="8" y2="13"></line>
             <line x1="16" y1="17" x2="8" y2="17"></line>
           </svg>
-          <span class="nav-label">文章发布台</span>
+          <span class="nav-label">本地文章发布</span>
           <span class="nav-badge badge-live hidden" id="badge-publish">运行</span>
         </button>
 
@@ -90,9 +90,9 @@
           <span class="status-dot" id="sidebar-job-dot"></span>
           <span class="job-summary-text" id="sidebar-job-text">后台任务：空闲</span>
         </button>
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+        <div class="sidebar-meta-row">
           <div class="sidebar-meta" id="sidebar-site-meta">加载站点中...</div>
-          <button type="button" class="badge badge-neutral" id="sidebar-version-pill" style="border:none;cursor:pointer;" title="查看版本与检查程序更新">v2.0.0</button>
+          <button type="button" class="badge badge-neutral" id="sidebar-version-pill" title="查看版本与检查程序更新">v2.0.1</button>
         </div>
       </div>
     </aside>
@@ -116,7 +116,7 @@
 
         <div class="topbar-right">
           <button type="button" class="pill-btn" id="topbar-version-pill" title="查看程序版本与 GitHub 自动更新">
-            <span class="mono" id="topbar-version-text">v2.0.0</span>
+            <span class="mono" id="topbar-version-text">v2.0.1</span>
           </button>
 
           <button type="button" class="pill-btn" id="topbar-job-pill" title="查看后台任务队列">
@@ -142,29 +142,29 @@
         <!-- ==================== 1. DASHBOARD ==================== -->
         <section class="view-panel active" id="view-dashboard">
           <div class="kpi-grid" id="dashboard-kpis">
-            <div class="kpi-card">
+            <div class="kpi-card kpi-accent-primary">
               <div class="kpi-label">总站点数</div>
               <div class="kpi-value" id="kpi-total-sites">0</div>
               <div class="kpi-foot" id="kpi-enabled-sites">已启用 0 站</div>
             </div>
-            <div class="kpi-card">
+            <div class="kpi-card kpi-accent-success">
               <div class="kpi-label">MCP 已连通</div>
               <div class="kpi-value text-success" id="kpi-mcp-ok">0</div>
               <div class="kpi-foot" id="kpi-mcp-fail">异常 0 站</div>
             </div>
-            <div class="kpi-card">
+            <div class="kpi-card kpi-accent-warning">
               <div class="kpi-label">可升级站点</div>
-              <div class="kpi-value text-info" id="kpi-updates">0</div>
+              <div class="kpi-value text-warning" id="kpi-updates">0</div>
               <div class="kpi-foot">基于已检测版本</div>
             </div>
-            <div class="kpi-card">
+            <div class="kpi-card kpi-accent-danger">
               <div class="kpi-label">掉链告警数</div>
               <div class="kpi-value text-danger" id="kpi-broken-links">0</div>
               <div class="kpi-foot" id="kpi-total-links">已记录友链 0 条</div>
             </div>
-            <div class="kpi-card">
+            <div class="kpi-card kpi-accent-info">
               <div class="kpi-label">今日已发 / 待发</div>
-              <div class="kpi-value" id="kpi-publish-pair">0 / 0</div>
+              <div class="kpi-value text-info" id="kpi-publish-pair">0 / 0</div>
               <div class="kpi-foot" id="kpi-publish-state">发布队列空闲</div>
             </div>
           </div>
@@ -190,7 +190,8 @@
               </div>
 
               <div class="toolbar-group">
-                <button type="button" class="btn btn-primary btn-sm" id="btn-dash-discover">一键全站探测</button>
+                <button type="button" class="btn btn-primary btn-sm btn-smart-cta" id="btn-dash-smart-import">⚡ 智能粘贴添加站点</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-dash-discover">一键全站探测</button>
                 <button type="button" class="btn btn-secondary btn-sm" id="btn-dash-probe">批量测 MCP</button>
                 <button type="button" class="btn btn-secondary btn-sm" id="btn-dash-batch-jump">批量免密跳后台</button>
               </div>
@@ -305,41 +306,64 @@
           <div class="subtab-panel" id="fl-panel-batch">
             <div class="two-col-layout">
               <div class="card">
-                <div class="card-head">
-                  <h3>1. 选择目标站点</h3>
+                <div class="step-card-header">
+                  <div class="step-card-title-group">
+                    <span class="step-badge">1</span>
+                    <div class="step-card-titles">
+                      <h3>选择目标站点</h3>
+                      <p class="step-card-subtitle">按分组或关键词快速筛选待操作的站群范围</p>
+                    </div>
+                  </div>
                 </div>
                 <div id="fl-batch-picker"></div>
               </div>
 
               <div class="card">
-                <div class="card-head">
-                  <h3>2. 输入或粘贴友链内容</h3>
+                <div class="step-card-header">
+                  <div class="step-card-title-group">
+                    <span class="step-badge">2</span>
+                    <div class="step-card-titles">
+                      <h3>输入或粘贴友链内容</h3>
+                      <p class="step-card-subtitle">支持 HTML &lt;a&gt; 标签、管道分隔文本或纯 URL 混贴</p>
+                    </div>
+                  </div>
                 </div>
                 <textarea class="textarea" id="fl-batch-input" rows="6" placeholder='支持混合粘贴：&#10;<a href="https://a.com" rel="nofollow">站点A</a>&#10;站点B|https://b.com&#10;https://c.com'></textarea>
-                <div class="form-row-inline">
-                  <label class="checkbox-label">
-                    <input type="checkbox" id="fl-batch-skip-existing" checked />
-                    <span>跳过已存在（按域名去重）</span>
-                  </label>
-                  <label class="checkbox-label">
-                    <input type="checkbox" id="fl-batch-nofollow" />
-                    <span>默认 nofollow</span>
-                  </label>
-                  <input type="text" class="input input-sm" id="fl-batch-remark" placeholder="统一备注（可选）" style="width:160px;" />
+                <div class="control-strip">
+                  <div class="control-strip-head">上链 / 去重参数</div>
+                  <div class="form-row-inline">
+                    <label class="checkbox-label">
+                      <input type="checkbox" id="fl-batch-skip-existing" checked />
+                      <span>跳过已存在（按域名去重）</span>
+                    </label>
+                    <label class="checkbox-label">
+                      <input type="checkbox" id="fl-batch-nofollow" />
+                      <span>默认 nofollow</span>
+                    </label>
+                    <input type="text" class="input input-sm" id="fl-batch-remark" placeholder="统一备注（可选）" style="width:160px;" />
+                  </div>
                 </div>
-                <div class="action-row">
-                  <button type="button" class="btn btn-secondary" id="btn-fl-batch-parse">识别预览</button>
-                  <button type="button" class="btn btn-primary" id="btn-fl-batch-add">批量上链</button>
-                  <button type="button" class="btn btn-danger" id="btn-fl-batch-remove">批量下链</button>
+                <div class="cta-strip">
+                  <button type="button" class="btn btn-secondary-accent" id="btn-fl-batch-parse">识别预览</button>
+                  <div class="inline-controls">
+                    <button type="button" class="btn btn-primary btn-cta" id="btn-fl-batch-add">批量上链</button>
+                    <button type="button" class="btn btn-danger" id="btn-fl-batch-remove">批量下链</button>
+                  </div>
                 </div>
 
                 <div id="fl-batch-preview-box" class="subcard hidden" style="margin-top:12px;"></div>
               </div>
             </div>
 
-            <div class="card" style="margin-top:16px;">
-              <div class="card-head">
-                <h3>3. 批量执行结果</h3>
+            <div class="card" style="margin-top:18px;">
+              <div class="step-card-header">
+                <div class="step-card-title-group">
+                  <span class="step-badge">3</span>
+                  <div class="step-card-titles">
+                    <h3>批量执行结果</h3>
+                    <p class="step-card-subtitle">按站点逐条展示实际写入、跳过或下链状态</p>
+                  </div>
+                </div>
                 <div id="fl-batch-result-counts" class="inline-controls"></div>
               </div>
               <div class="table-wrap table-medium">
@@ -366,15 +390,27 @@
           <div class="subtab-panel" id="fl-panel-crosslink">
             <div class="two-col-layout">
               <div class="card">
-                <div class="card-head">
-                  <h3>1. 选择参与互链站点</h3>
+                <div class="step-card-header">
+                  <div class="step-card-title-group">
+                    <span class="step-badge">1</span>
+                    <div class="step-card-titles">
+                      <h3>选择参与互链站点</h3>
+                      <p class="step-card-subtitle">至少选择 2 个站点以构建 SEO 互链拓扑</p>
+                    </div>
+                  </div>
                 </div>
                 <div id="fl-xl-picker"></div>
               </div>
 
               <div class="card">
-                <div class="card-head">
-                  <h3>2. 互链拓扑策略与参数</h3>
+                <div class="step-card-header">
+                  <div class="step-card-title-group">
+                    <span class="step-badge">2</span>
+                    <div class="step-card-titles">
+                      <h3>互链拓扑策略与参数</h3>
+                      <p class="step-card-subtitle">先生成并校验指纹计划，再一键写入与台账存档</p>
+                    </div>
+                  </div>
                 </div>
                 <div class="form-grid">
                   <label class="field">
@@ -423,42 +459,54 @@
                   </label>
                 </div>
 
-                <div class="form-row-inline" style="margin-top:8px;">
-                  <label class="checkbox-label" id="fl-xl-bidirectional-wrap">
-                    <input type="checkbox" id="fl-xl-bidirectional" checked />
-                    <span>双向互链</span>
-                  </label>
-                  <label class="checkbox-label" id="fl-xl-avoid-reciprocal-wrap">
-                    <input type="checkbox" id="fl-xl-avoid-reciprocal" checked />
-                    <span>避免直接互指（降低交叉特征）</span>
-                  </label>
-                  <label class="checkbox-label" id="fl-xl-avoid-root-wrap">
-                    <input type="checkbox" id="fl-xl-avoid-root" checked />
-                    <span>避开同主域名</span>
-                  </label>
-                  <label class="checkbox-label">
-                    <input type="checkbox" id="fl-xl-nofollow" />
-                    <span>添加 nofollow</span>
-                  </label>
+                <div class="control-strip">
+                  <div class="control-strip-head">风控与链接属性开关</div>
+                  <div class="form-row-inline">
+                    <label class="checkbox-label" id="fl-xl-bidirectional-wrap">
+                      <input type="checkbox" id="fl-xl-bidirectional" checked />
+                      <span>双向互链</span>
+                    </label>
+                    <label class="checkbox-label" id="fl-xl-avoid-reciprocal-wrap">
+                      <input type="checkbox" id="fl-xl-avoid-reciprocal" checked />
+                      <span>避免直接互指（降低交叉特征）</span>
+                    </label>
+                    <label class="checkbox-label" id="fl-xl-avoid-root-wrap">
+                      <input type="checkbox" id="fl-xl-avoid-root" checked />
+                      <span>避开同主域名</span>
+                    </label>
+                    <label class="checkbox-label">
+                      <input type="checkbox" id="fl-xl-nofollow" />
+                      <span>添加 nofollow</span>
+                    </label>
+                  </div>
                 </div>
 
-                <div class="action-row" style="margin-top:12px;">
-                  <button type="button" class="btn btn-secondary" id="btn-fl-xl-preview">生成预览计划</button>
-                  <button type="button" class="btn btn-primary" id="btn-fl-xl-execute" disabled title="需先生成与当前选择一致的预览计划">执行互链</button>
-                  <div class="divider-v"></div>
-                  <label class="checkbox-label">
-                    <input type="checkbox" id="fl-xl-export-nofollow" />
-                    <span>导出带 nofollow</span>
-                  </label>
-                  <button type="button" class="btn btn-ghost" id="btn-fl-xl-export">导出所选站点换链 HTML</button>
+                <div class="cta-strip">
+                  <div class="inline-controls">
+                    <button type="button" class="btn btn-secondary-accent" id="btn-fl-xl-preview">生成预览计划</button>
+                    <button type="button" class="btn btn-primary btn-cta" id="btn-fl-xl-execute" disabled title="需先生成与当前选择一致的预览计划">执行互链</button>
+                  </div>
+                  <div class="inline-controls">
+                    <label class="checkbox-label">
+                      <input type="checkbox" id="fl-xl-export-nofollow" />
+                      <span>导出带 nofollow</span>
+                    </label>
+                    <button type="button" class="btn btn-ghost btn-sm" id="btn-fl-xl-export">导出换链 HTML</button>
+                  </div>
                 </div>
-                <div class="muted-text" id="fl-xl-fp-hint" style="margin-top:6px;">请先点击「生成预览计划」以校验并锁定本次互链指纹。</div>
+                <div class="muted-text" id="fl-xl-fp-hint" style="margin-top:8px;">请先点击「生成预览计划」以校验并锁定本次互链指纹。</div>
               </div>
             </div>
 
-            <div class="card" style="margin-top:16px;">
-              <div class="card-head">
-                <h3>3. 互链计划预览 / 执行明细</h3>
+            <div class="card" style="margin-top:18px;">
+              <div class="step-card-header">
+                <div class="step-card-title-group">
+                  <span class="step-badge">3</span>
+                  <div class="step-card-titles">
+                    <h3>互链计划预览 / 执行明细</h3>
+                    <p class="step-card-subtitle">展示源站、目标站、轮换锚文本与实时执行状态</p>
+                  </div>
+                </div>
                 <div id="fl-xl-preview-summary" class="inline-controls"></div>
               </div>
               <div class="table-wrap table-medium">
@@ -482,9 +530,15 @@
               </div>
             </div>
 
-            <div class="card" style="margin-top:16px;">
-              <div class="card-head">
-                <h3>4. 历史互链台账与回滚</h3>
+            <div class="card" style="margin-top:18px;">
+              <div class="step-card-header">
+                <div class="step-card-title-group">
+                  <span class="step-badge">4</span>
+                  <div class="step-card-titles">
+                    <h3>历史互链台账与回滚</h3>
+                    <p class="step-card-subtitle">支持按历史批次精准一键回滚新建友链</p>
+                  </div>
+                </div>
                 <button type="button" class="btn btn-ghost btn-sm" id="btn-fl-xl-history-refresh">刷新台账</button>
               </div>
               <div class="table-wrap table-short">
@@ -512,27 +566,49 @@
           <div class="subtab-panel" id="fl-panel-audit">
             <div class="two-col-layout">
               <div class="card">
-                <div class="card-head">
-                  <h3>1. 巡检站点范围（不选则巡检全站）</h3>
+                <div class="step-card-header">
+                  <div class="step-card-title-group">
+                    <span class="step-badge">1</span>
+                    <div class="step-card-titles">
+                      <h3>巡检站点范围</h3>
+                      <p class="step-card-subtitle">不选站点则默认并发巡检全站群</p>
+                    </div>
+                  </div>
                 </div>
                 <div id="fl-audit-picker"></div>
               </div>
               <div class="card">
-                <div class="card-head">
-                  <h3>2. 白名单域名与发起巡检</h3>
+                <div class="step-card-header">
+                  <div class="step-card-title-group">
+                    <span class="step-badge">2</span>
+                    <div class="step-card-titles">
+                      <h3>白名单域名与发起巡检</h3>
+                      <p class="step-card-subtitle">自动抓取目标站点源码检查反链存活与 nofollow 标记</p>
+                    </div>
+                  </div>
                 </div>
                 <label class="field">
                   <span>白名单域名（每行一个或逗号分隔，匹配主域名免检）</span>
                   <textarea class="textarea" id="fl-audit-whitelist" rows="5" placeholder="example.org&#10;official-partner.com"></textarea>
                 </label>
-                <div class="action-row" style="margin-top:12px;">
-                  <button type="button" class="btn btn-primary" id="btn-fl-audit-run">开始全站并发巡检</button>
+                <div class="cta-strip">
+                  <span class="muted-text">巡检完成后可在下方一键批量清理掉链</span>
+                  <button type="button" class="btn btn-primary btn-cta" id="btn-fl-audit-run">开始全站并发巡检</button>
                 </div>
                 <div id="fl-audit-errors" class="alert-box hidden" style="margin-top:12px;"></div>
               </div>
             </div>
 
-            <div class="card" style="margin-top:16px;">
+            <div class="card" style="margin-top:18px;">
+              <div class="step-card-header">
+                <div class="step-card-title-group">
+                  <span class="step-badge">3</span>
+                  <div class="step-card-titles">
+                    <h3>反链巡检结果与掉链清理</h3>
+                    <p class="step-card-subtitle">按健康状态筛选并批量下掉无反链或不可达友链</p>
+                  </div>
+                </div>
+              </div>
               <div class="toolbar">
                 <div class="toolbar-group" id="fl-audit-summary">
                   <button type="button" class="filter-pill active" data-audit-filter="all">全部 0</button>
@@ -573,36 +649,60 @@
           <div class="subtab-panel" id="fl-panel-search">
             <div class="two-col-layout">
               <div class="card">
-                <div class="card-head">
-                  <h3>1. 搜索站点范围（不选则搜索全站）</h3>
+                <div class="step-card-header">
+                  <div class="step-card-title-group">
+                    <span class="step-badge">1</span>
+                    <div class="step-card-titles">
+                      <h3>搜索站点范围</h3>
+                      <p class="step-card-subtitle">不选则全站搜索，支持快速筛选特定分组</p>
+                    </div>
+                  </div>
                 </div>
                 <div id="fl-search-picker"></div>
               </div>
               <div class="card">
-                <div class="card-head">
-                  <h3>2. 搜索条件</h3>
+                <div class="step-card-header">
+                  <div class="step-card-title-group">
+                    <span class="step-badge">2</span>
+                    <div class="step-card-titles">
+                      <h3>搜索条件与匹配方式</h3>
+                      <p class="step-card-subtitle">定位目标外链在站群中的分布情况</p>
+                    </div>
+                  </div>
                 </div>
                 <div class="form-grid-1">
                   <label class="field">
                     <span>域名 / 链接关键词 / 标题 / 备注（留空拉取全部友链）</span>
                     <input type="text" class="input" id="fl-search-query" placeholder="例如：partner.com 或 集团A" />
                   </label>
+                </div>
+                <div class="control-strip">
                   <label class="checkbox-label">
                     <input type="checkbox" id="fl-search-root-domain" checked />
                     <span>按主域名匹配（自动归一 www / 子域名）</span>
                   </label>
                 </div>
-                <div class="action-row" style="margin-top:12px;">
-                  <button type="button" class="btn btn-primary" id="btn-fl-search-run">全站搜索</button>
+                <div class="cta-strip">
+                  <span class="muted-text">支持在下方结果列表中批量下掉命中链接</span>
+                  <button type="button" class="btn btn-primary btn-cta" id="btn-fl-search-run">全站搜索</button>
                 </div>
                 <div id="fl-search-errors" class="alert-box hidden" style="margin-top:12px;"></div>
               </div>
             </div>
 
-            <div class="card" style="margin-top:16px;">
+            <div class="card" style="margin-top:18px;">
+              <div class="step-card-header">
+                <div class="step-card-title-group">
+                  <span class="step-badge">3</span>
+                  <div class="step-card-titles">
+                    <h3>全站查链命中结果</h3>
+                    <p class="step-card-subtitle">勾选中命中条目后可一键从对应站点精准移除</p>
+                  </div>
+                </div>
+                <span class="badge badge-neutral" id="fl-search-summary">命中 0 条</span>
+              </div>
               <div class="toolbar">
                 <div class="toolbar-group">
-                  <span class="badge badge-neutral" id="fl-search-summary">命中 0 条</span>
                   <button type="button" class="btn btn-ghost btn-sm" id="btn-fl-search-select-all">全选</button>
                   <button type="button" class="btn btn-ghost btn-sm" id="btn-fl-search-select-none">全不选</button>
                 </div>
@@ -636,46 +736,71 @@
         <section class="view-panel" id="view-upgrade">
           <div class="two-col-layout">
             <div class="card">
-              <div class="card-head">
-                <h3>1. 选择检测 / 升级站点（不选则检测全站）</h3>
+              <div class="step-card-header">
+                <div class="step-card-title-group">
+                  <span class="step-badge">1</span>
+                  <div class="step-card-titles">
+                    <h3>选择检测 / 升级站点</h3>
+                    <p class="step-card-subtitle">不选站点则默认检测全站；执行升级前需显式勾选目标站点</p>
+                  </div>
+                </div>
               </div>
               <div id="upg-picker"></div>
             </div>
+
             <div class="card">
-              <div class="card-head">
-                <h3>2. 版本检测与灰度升级选项</h3>
-              </div>
-              <div class="action-row">
-                <button type="button" class="btn btn-secondary" id="btn-upg-check">批量检测版本</button>
-                <button type="button" class="btn btn-ghost" id="btn-upg-probe">批量测 MCP</button>
-              </div>
-              <div class="divider-h"></div>
-              <div class="form-grid">
-                <label class="field">
-                  <span>升级并发数（1–5）</span>
-                  <input type="number" class="input" id="upg-concurrency" min="1" max="5" value="3" />
-                </label>
-                <div class="field" style="justify-content:flex-end;">
-                  <label class="checkbox-label">
-                    <input type="checkbox" id="upg-canary" checked />
-                    <span>金丝雀先行（先升第 1 站验证健康再并发）</span>
-                  </label>
-                  <label class="checkbox-label" style="margin-top:6px;">
-                    <input type="checkbox" id="upg-stop-fail" checked />
-                    <span>失败即停（金丝雀或任一站失败后中止余下站）</span>
-                  </label>
+              <div class="step-card-header">
+                <div class="step-card-title-group">
+                  <span class="step-badge">2</span>
+                  <div class="step-card-titles">
+                    <h3>版本检测与灰度升级选项</h3>
+                    <p class="step-card-subtitle">先排查版本与 MCP 升级通道，再按并发与金丝雀策略平滑发布</p>
+                  </div>
                 </div>
               </div>
-              <div class="action-row" style="margin-top:12px;">
-                <button type="button" class="btn btn-primary" id="btn-upg-run">升级选中站点</button>
+
+              <div class="action-row">
+                <button type="button" class="btn btn-secondary-accent" id="btn-upg-check">批量检测版本</button>
+                <button type="button" class="btn btn-secondary" id="btn-upg-probe">批量测 MCP</button>
+              </div>
+
+              <div class="control-strip">
+                <div class="control-strip-head">灰度升级风控配置</div>
+                <div class="form-grid">
+                  <label class="field">
+                    <span>升级并发数（1–5）</span>
+                    <input type="number" class="input" id="upg-concurrency" min="1" max="5" value="3" />
+                  </label>
+                  <div class="field" style="justify-content:flex-end;">
+                    <label class="checkbox-label">
+                      <input type="checkbox" id="upg-canary" checked />
+                      <span>金丝雀先行（先升第 1 站验证健康再并发）</span>
+                    </label>
+                    <label class="checkbox-label" style="margin-top:7px;">
+                      <input type="checkbox" id="upg-stop-fail" checked />
+                      <span>失败即停（金丝雀或任一站失败后中止余下站）</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="cta-strip">
+                <span class="muted-text">高危动作：将弹窗二次确认所选站点清单</span>
+                <button type="button" class="btn btn-primary btn-cta" id="btn-upg-run">升级选中站点</button>
               </div>
             </div>
           </div>
 
-          <div class="card" style="margin-top:16px;">
-            <div class="card-head">
-              <h3>3. 版本与升级状态矩阵</h3>
-              <div id="upg-summary" class="inline-controls"></div>
+          <div class="card" style="margin-top:18px;">
+            <div class="step-card-header">
+              <div class="step-card-title-group">
+                <span class="step-badge">3</span>
+                <div class="step-card-titles">
+                  <h3>版本与升级状态矩阵</h3>
+                  <p class="step-card-subtitle">一览当前版本、目标版本、状态色标、通道工具与异常中文排查指引</p>
+                </div>
+              </div>
+              <div id="upg-summary" class="matrix-kpi-strip"></div>
             </div>
             <div class="table-wrap table-tall">
               <table class="data-table">
@@ -703,7 +828,7 @@
           <div class="subtab-bar" role="tablist">
             <button type="button" class="subtab-btn active" data-sites-tab="list">站点列表与编辑</button>
             <button type="button" class="subtab-btn" data-sites-tab="assign">批量赋值（老站）</button>
-            <button type="button" class="subtab-btn" data-sites-tab="import">批量导入新站</button>
+            <button type="button" class="subtab-btn" data-sites-tab="import">⚡ 智能粘贴导入（MCP / 接口）</button>
           </div>
 
           <!-- 4.1 站点列表与编辑 -->
@@ -722,7 +847,10 @@
                     </select>
                     <input type="search" class="input input-sm" id="sites-search" placeholder="搜索站点..." />
                   </div>
-                  <button type="button" class="btn btn-primary btn-sm" id="btn-site-new">+ 新增站点</button>
+                  <div class="toolbar-group">
+                    <button type="button" class="btn btn-primary btn-sm btn-smart-cta" id="btn-sites-smart-import">⚡ 智能粘贴添加站点</button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="btn-site-new">+ 新增站点</button>
+                  </div>
                 </div>
                 <div class="table-wrap table-tall">
                   <table class="data-table">
@@ -749,77 +877,203 @@
                   <button type="button" class="btn btn-danger btn-sm hidden" id="btn-site-delete">删除站点</button>
                 </div>
                 <form id="site-form" class="site-form">
-                  <div class="form-grid">
-                    <label class="field">
-                      <span>站点标识（name）*</span>
-                      <input type="text" class="input" id="sf-name" required placeholder="例如 site_alpha" />
-                    </label>
-                    <label class="field">
-                      <span>站点分组（site_group）</span>
-                      <input type="text" class="input" id="sf-group" placeholder="例如 集团A" />
-                    </label>
-                    <label class="field field-full">
-                      <span>站点标题（site_title）<em class="field-hint">支持 词1|词2|词3 互链锚文本轮换</em></span>
-                      <input type="text" class="input" id="sf-title" placeholder="例如 主站标题|备用锚文本1|备用锚文本2" />
-                    </label>
-                    <label class="field field-full">
-                      <span>站点网址（url）</span>
-                      <input type="text" class="input" id="sf-url" placeholder="https://example.com" />
-                    </label>
-                    <label class="field field-full">
-                      <span>发布导入接口（jiekou，支持直接粘贴带 token 完整导入 URL）</span>
-                      <input type="text" class="input" id="sf-jiekou" placeholder="留空保留原有接口；或填写 https://site.com/api/import/archive?token=..." />
-                      <small class="muted-text" id="sf-jiekou-masked"></small>
-                    </label>
-                    <label class="field">
-                      <span>MCP Token（留空保持不变）</span>
-                      <input type="password" class="input" id="sf-mcp-token" autocomplete="new-password" placeholder="输入新 Token 以替换" />
-                      <label class="checkbox-label small-check">
-                        <input type="checkbox" id="sf-clear-mcp" />
-                        <span>清空 MCP Token</span>
-                      </label>
-                    </label>
-                    <label class="field">
-                      <span>后台路径（admin_path）</span>
-                      <input type="text" class="input" id="sf-admin-path" placeholder="/system/" />
-                    </label>
-                    <label class="field">
-                      <span>后台账号（admin_username）</span>
-                      <input type="text" class="input" id="sf-admin-user" placeholder="admin" />
-                    </label>
-                    <label class="field">
-                      <span>后台密码（留空保持不变）</span>
-                      <input type="password" class="input" id="sf-admin-pass" autocomplete="new-password" placeholder="输入新密码以替换" />
-                      <label class="checkbox-label small-check">
-                        <input type="checkbox" id="sf-clear-pass" />
-                        <span>清空后台密码</span>
-                      </label>
-                    </label>
-                    <label class="field">
-                      <span>默认栏目 ID（fid，0=仅站群管理）</span>
-                      <input type="number" class="input" id="sf-fid" min="0" value="0" />
-                    </label>
-                    <label class="field">
-                      <span>每日发布上限（daily_publish_limit）</span>
-                      <input type="number" class="input" id="sf-limit" min="0" value="60" />
-                    </label>
-                    <label class="field">
-                      <span>发布间隔秒数（interval_time）</span>
-                      <input type="number" class="input" id="sf-interval" min="0" value="60" />
-                    </label>
-                    <label class="field">
-                      <span>定时发布点（publish_time）</span>
-                      <input type="text" class="input" id="sf-pubtime" placeholder="06:00:00" />
-                    </label>
+                  <div class="editor-tabs" role="tablist" aria-label="站点配置分组">
+                    <button type="button" class="editor-tab-btn active" data-editor-tab="basic" role="tab" aria-selected="true">① 基础与凭据</button>
+                    <button type="button" class="editor-tab-btn" data-editor-tab="publish" role="tab" aria-selected="false">② 本地发布与插图</button>
                   </div>
-                  <div class="form-row-inline" style="margin-top:8px;">
-                    <label class="checkbox-label">
-                      <input type="checkbox" id="sf-enabled" />
-                      <span>启用定时文章发布（enabled）</span>
-                    </label>
+
+                  <!-- Tab 1: ① 基础与凭据 -->
+                  <div class="editor-tab-panel active" id="site-editor-panel-basic" data-editor-panel="basic" role="tabpanel">
+                    <div class="site-form-section">
+                      <div class="quick-paste-card" id="site-quick-paste-card">
+                        <div class="quick-paste-head">
+                          <div class="quick-paste-title">
+                            <strong>⚡ 快捷粘贴自动填表</strong>
+                            <span class="badge badge-info">推荐</span>
+                          </div>
+                          <span class="muted-text">粘贴后自动识别，或点击按钮一键填入下方表单</span>
+                        </div>
+                        <textarea
+                          class="textarea quick-paste-textarea"
+                          id="site-quick-paste-input"
+                          rows="3"
+                          placeholder='粘贴 AnqiCMS MCP JSON ({"mcpServers": {...}}) 和/或导入接口 URL (https://.../api/import/archive?token=...)，支持混贴'
+                        ></textarea>
+                        <div class="quick-paste-actions">
+                          <button type="button" class="btn btn-primary btn-sm" id="btn-site-quick-paste">一键识别填表</button>
+                          <span class="muted-text" id="site-quick-paste-status">支持单站 MCP JSON 与导入 URL 自动解析</span>
+                        </div>
+                      </div>
+
+                      <div class="form-grid">
+                        <label class="field">
+                          <span>站点标识（name）*</span>
+                          <input type="text" class="input" id="sf-name" required placeholder="例如 site_alpha" />
+                        </label>
+                        <label class="field">
+                          <span>站点分组（site_group）</span>
+                          <input type="text" class="input" id="sf-group" placeholder="例如 集团A" />
+                        </label>
+                        <label class="field">
+                          <span>站点标题（site_title）<em class="field-hint">支持 词1|词2|词3 轮换</em></span>
+                          <input type="text" class="input" id="sf-title" placeholder="例如 主站标题|备用锚文本1" />
+                        </label>
+                        <label class="field">
+                          <span>站点网址（url）</span>
+                          <input type="text" class="input" id="sf-url" placeholder="https://example.com" />
+                        </label>
+                        <label class="field field-full">
+                          <span>发布导入接口（jiekou，支持直接粘贴带 token 完整导入 URL）</span>
+                          <div class="secret-input-wrap">
+                            <input type="password" class="input" id="sf-jiekou" autocomplete="new-password" placeholder="留空保留原有接口；或填写 https://site.com/api/import/archive?token=..." />
+                            <button type="button" class="secret-toggle-btn" data-toggle-secret="sf-jiekou" title="显示/隐藏" aria-label="显示/隐藏发布导入接口" aria-pressed="false">
+                              <svg class="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                              </svg>
+                              <svg class="icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                <line x1="1" y1="1" x2="23" y2="23"></line>
+                              </svg>
+                            </button>
+                          </div>
+                          <small class="muted-text" id="sf-jiekou-masked"></small>
+                        </label>
+                        <label class="field">
+                          <span>MCP Token（留空保持不变）</span>
+                          <div class="secret-input-wrap">
+                            <input type="password" class="input" id="sf-mcp-token" autocomplete="new-password" placeholder="输入新 Token 以替换" />
+                            <button type="button" class="secret-toggle-btn" data-toggle-secret="sf-mcp-token" title="显示/隐藏" aria-label="显示/隐藏 MCP Token" aria-pressed="false">
+                              <svg class="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                              </svg>
+                              <svg class="icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                <line x1="1" y1="1" x2="23" y2="23"></line>
+                              </svg>
+                            </button>
+                          </div>
+                          <label class="checkbox-label small-check">
+                            <input type="checkbox" id="sf-clear-mcp" />
+                            <span>清空 MCP Token</span>
+                          </label>
+                        </label>
+                        <label class="field">
+                          <span>后台路径（admin_path）</span>
+                          <input type="text" class="input" id="sf-admin-path" placeholder="/system/" />
+                        </label>
+                        <label class="field">
+                          <span>后台账号（admin_username）</span>
+                          <input type="text" class="input" id="sf-admin-user" placeholder="admin" />
+                        </label>
+                        <label class="field">
+                          <span>后台密码（留空保持不变）</span>
+                          <div class="secret-input-wrap">
+                            <input type="password" class="input" id="sf-admin-pass" autocomplete="new-password" placeholder="输入新密码以替换" />
+                            <button type="button" class="secret-toggle-btn" data-toggle-secret="sf-admin-pass" title="显示/隐藏" aria-label="显示/隐藏后台密码" aria-pressed="false">
+                              <svg class="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                              </svg>
+                              <svg class="icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                <line x1="1" y1="1" x2="23" y2="23"></line>
+                              </svg>
+                            </button>
+                          </div>
+                          <label class="checkbox-label small-check">
+                            <input type="checkbox" id="sf-clear-pass" />
+                            <span>清空后台密码</span>
+                          </label>
+                        </label>
+                      </div>
+                    </div>
                   </div>
-                  <div class="action-row" style="margin-top:12px;">
-                    <button type="submit" class="btn btn-primary" id="btn-site-save">保存站点配置</button>
+
+                  <!-- Tab 2: ② 本地发布与插图 -->
+                  <div class="editor-tab-panel" id="site-editor-panel-publish" data-editor-panel="publish" role="tabpanel">
+                    <div class="site-form-section site-form-section-publish">
+                      <div class="site-form-section-head">
+                        <span class="muted-text">本地文章目录、线上栏目绑定、发布排期与自动插图</span>
+                        <label class="checkbox-label">
+                          <input type="checkbox" id="sf-enabled" />
+                          <span>启用定时发布</span>
+                        </label>
+                      </div>
+
+                      <div class="form-grid">
+                        <label class="field field-full">
+                          <span>本地文章目录（publish_dir）</span>
+                          <input type="text" class="input" id="sf-publish-dir" placeholder="./文章目录/站点名" />
+                        </label>
+
+                        <label class="field">
+                          <span>默认发布栏目（fid，0=仅站群管理）</span>
+                          <input type="number" class="input" id="sf-fid" min="0" value="0" />
+                        </label>
+
+                        <label class="field">
+                          <span>线上栏目选择（联动填充 fid 与栏目名）</span>
+                          <div class="input-with-action">
+                            <select class="input" id="sf-cat-select">
+                              <option value="">-- 点击右侧拉取线上栏目 --</option>
+                            </select>
+                            <button type="button" class="btn btn-secondary-accent btn-sm" id="btn-sf-fetch-cats">拉取线上栏目</button>
+                          </div>
+                        </label>
+
+                        <label class="field">
+                          <span>默认栏目名称（category_name）</span>
+                          <input type="text" class="input" id="sf-category-name" placeholder="随栏目选择自动填充或手动填写" />
+                        </label>
+
+                        <label class="field">
+                          <span>绑定插图图库（gallery_id）</span>
+                          <div class="input-with-action">
+                            <select class="input" id="sf-gallery-id">
+                              <option value="">不自动插图</option>
+                            </select>
+                            <button type="button" class="btn btn-ghost btn-sm" id="btn-sf-manage-galleries">去管理图库</button>
+                          </div>
+                          <small class="muted-text" id="sf-image-file-hint"></small>
+                        </label>
+
+                        <label class="field field-full">
+                          <span>每日发布时间（publish_times，逗号或换行分隔）</span>
+                          <input type="text" class="input" id="sf-publish-times" placeholder="08:00:00, 14:00:00, 20:00:00" />
+                        </label>
+
+                        <label class="field">
+                          <span>发布间隔（秒）</span>
+                          <input type="number" class="input" id="sf-interval-time" min="0" value="60" />
+                        </label>
+
+                        <label class="field">
+                          <span>每日发布上限</span>
+                          <input type="number" class="input" id="sf-daily-limit" min="0" value="60" />
+                        </label>
+
+                        <label class="field">
+                          <span>库存预警阈值</span>
+                          <input type="number" class="input" id="sf-warning-threshold" min="0" value="500" />
+                        </label>
+
+                        <label class="field field-full">
+                          <span>标题关键词自动分栏目（category_keywords）<em class="field-hint">每行：栏目ID: 关键词1, 关键词2</em></span>
+                          <textarea
+                            class="textarea"
+                            id="sf-cat-keywords"
+                            rows="3"
+                            placeholder="9: 搬家, 拉货, 货运&#10;12: 保洁, 清洗"
+                          ></textarea>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="action-row" style="margin-top:4px;">
+                    <button type="submit" class="btn btn-primary btn-cta" id="btn-site-save">保存站点配置</button>
                     <button type="button" class="btn btn-ghost" id="btn-site-reset">重置为新增</button>
                   </div>
                 </form>
@@ -831,15 +1085,27 @@
           <div class="subtab-panel" id="sites-panel-assign">
             <div class="two-col-layout">
               <div class="card">
-                <div class="card-head">
-                  <h3>1. 选择需要批量赋值的老站</h3>
+                <div class="step-card-header">
+                  <div class="step-card-title-group">
+                    <span class="step-badge">1</span>
+                    <div class="step-card-titles">
+                      <h3>选择需要批量赋值的老站</h3>
+                      <p class="step-card-subtitle">支持按分组快速勾选多台站点统一改参</p>
+                    </div>
+                  </div>
                 </div>
                 <div id="sites-assign-picker"></div>
               </div>
 
               <div class="card">
-                <div class="card-head">
-                  <h3>2. 统一赋值字段（留空保持原值不变）</h3>
+                <div class="step-card-header">
+                  <div class="step-card-title-group">
+                    <span class="step-badge">2</span>
+                    <div class="step-card-titles">
+                      <h3>统一赋值字段（留空保持原值不变）</h3>
+                      <p class="step-card-subtitle">只写入非空字段，未填写项保持原配置不变</p>
+                    </div>
+                  </div>
                 </div>
                 <div class="form-grid">
                   <label class="field">
@@ -852,7 +1118,19 @@
                   </label>
                   <label class="field">
                     <span>MCP Token</span>
-                    <input type="password" class="input" id="ba-mcp-token" placeholder="留空不修改" />
+                    <div class="secret-input-wrap">
+                      <input type="password" class="input" id="ba-mcp-token" autocomplete="new-password" placeholder="留空不修改" />
+                      <button type="button" class="secret-toggle-btn" data-toggle-secret="ba-mcp-token" title="显示/隐藏" aria-label="显示/隐藏批量 MCP Token" aria-pressed="false">
+                        <svg class="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                          <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                        <svg class="icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                          <line x1="1" y1="1" x2="23" y2="23"></line>
+                        </svg>
+                      </button>
+                    </div>
                   </label>
                   <label class="field">
                     <span>后台路径（admin_path）</span>
@@ -864,7 +1142,19 @@
                   </label>
                   <label class="field">
                     <span>后台密码（admin_password）</span>
-                    <input type="password" class="input" id="ba-admin-pass" placeholder="留空不修改" />
+                    <div class="secret-input-wrap">
+                      <input type="password" class="input" id="ba-admin-pass" autocomplete="new-password" placeholder="留空不修改" />
+                      <button type="button" class="secret-toggle-btn" data-toggle-secret="ba-admin-pass" title="显示/隐藏" aria-label="显示/隐藏批量后台密码" aria-pressed="false">
+                        <svg class="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                          <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                        <svg class="icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                          <line x1="1" y1="1" x2="23" y2="23"></line>
+                        </svg>
+                      </button>
+                    </div>
                   </label>
                   <label class="field">
                     <span>默认栏目 ID（fid）</span>
@@ -901,14 +1191,14 @@
             </div>
           </div>
 
-          <!-- 4.3 批量导入新站 -->
+          <!-- 4.3 ⚡ 智能粘贴导入（MCP / 接口） -->
           <div class="subtab-panel" id="sites-panel-import">
-            <div class="card">
+            <div class="card smart-import-card">
               <div class="card-head">
-                <h3>智能粘贴导入（直接粘贴 AnqiCMS MCP JSON 和 导入接口 URL）</h3>
-                <span class="muted-text">支持纯站群管理（默认 fid=0，不开启自动发布）</span>
+                <h3>⚡ 智能粘贴导入（直接粘贴 AnqiCMS MCP JSON 和 导入接口 URL）</h3>
+                <span class="badge badge-info">纯站群默认 fid=0，不开启自动发布</span>
               </div>
-              <p class="muted-text" style="margin-bottom:10px;">
+              <p class="muted-text" style="margin:0 0 12px;">
                 支持单站或多站混贴：直接贴 AnqiCMS「一键复制 MCP JSON」和「导入接口 URL」，自动按域名合并；已存在站点自动补全 Token/接口；导入后默认自动抓取标题、栏目、版本、MCP 与友链数。
               </p>
               <div class="form-grid" style="margin-bottom:10px;">
@@ -959,63 +1249,153 @@
 
         <!-- ==================== 5. PUBLISH ==================== -->
         <section class="view-panel" id="view-publish">
-          <div class="card">
-            <div class="toolbar">
-              <div class="toolbar-group">
-                <span class="badge badge-neutral" id="pub-status-badge">已停止</span>
-                <span class="muted-text" id="pub-stats-bar">今日尚未启动批量任务</span>
-              </div>
-              <div class="toolbar-group">
-                <label class="checkbox-label">
-                  <input type="checkbox" id="pub-allow-disabled" />
-                  <span>允许包含未启用站点</span>
-                </label>
-                <label class="checkbox-label">
-                  <input type="checkbox" id="pub-auto-refresh" checked />
-                  <span>运行中自动刷新</span>
-                </label>
-                <button type="button" class="btn btn-primary btn-sm" id="btn-pub-start">启动发布</button>
-                <button type="button" class="btn btn-danger btn-sm" id="btn-pub-stop">停止发布</button>
-                <button type="button" class="btn btn-secondary btn-sm" id="btn-pub-refresh">刷新</button>
-              </div>
-            </div>
-
-            <div class="subcard" style="margin-bottom:14px;">
-              <div class="subcard-head">
-                <strong>可选：限定发布站点（留空则按已启用站群自动调度）</strong>
-              </div>
-              <div id="pub-picker"></div>
-            </div>
-
-            <div class="table-wrap table-medium">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>站点名</th>
-                    <th>队列状态</th>
-                    <th>待发文章</th>
-                    <th>库存总数</th>
-                    <th>今日已发 / 上限</th>
-                    <th>剩余配额</th>
-                    <th>诊断 / 错误</th>
-                  </tr>
-                </thead>
-                <tbody id="pub-table-body">
-                  <tr><td colspan="7" class="empty-cell">加载发布状态中...</td></tr>
-                </tbody>
-              </table>
-            </div>
+          <div class="subtab-bar" role="tablist">
+            <button type="button" class="subtab-btn active" data-pub-tab="queue">发布队列、待发文章与日志</button>
+            <button type="button" class="subtab-btn" data-pub-tab="galleries">图库与自动插图管理</button>
           </div>
 
-          <div class="card" style="margin-top:16px;">
-            <div class="card-head">
-              <div>
-                <h3>实时发布日志（Tail）</h3>
-                <small class="muted-text" id="pub-log-file"></small>
+          <!-- 5.1 发布队列、待发文章与日志 -->
+          <div class="subtab-panel active" id="pub-panel-queue">
+            <div class="card">
+              <div class="toolbar">
+                <div class="toolbar-group">
+                  <span class="badge badge-neutral" id="pub-status-badge">已停止</span>
+                  <span class="muted-text" id="pub-stats-bar">今日尚未启动批量任务</span>
+                </div>
+                <div class="toolbar-group">
+                  <button type="button" class="btn btn-primary btn-sm" id="btn-pub-start">启动发布</button>
+                  <button type="button" class="btn btn-danger btn-sm" id="btn-pub-stop">停止发布</button>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-pub-refresh">刷新</button>
+                </div>
               </div>
-              <button type="button" class="btn btn-ghost btn-sm" id="btn-pub-logs-refresh">刷新日志</button>
+
+              <div class="control-strip">
+                <div class="form-row-inline">
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="pub-allow-disabled" />
+                    <span>允许包含未启用站点</span>
+                  </label>
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="pub-auto-refresh" checked />
+                    <span>运行中自动刷新</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="subcard" style="margin-bottom:14px;">
+                <div class="subcard-head">
+                  <strong>可选：限定发布站点（留空则按已启用站群自动调度）</strong>
+                </div>
+                <div id="pub-picker"></div>
+              </div>
+
+              <div class="table-wrap table-medium">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>站点名</th>
+                      <th>队列状态</th>
+                      <th>待发文章</th>
+                      <th>库存总数</th>
+                      <th>今日已发 / 上限</th>
+                      <th>剩余配额</th>
+                      <th>诊断 / 错误</th>
+                      <th class="col-actions">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pub-table-body">
+                    <tr><td colspan="8" class="empty-cell">加载发布状态中...</td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
-            <pre class="log-console" id="pub-log-lines">暂无发布日志</pre>
+
+            <div class="card" style="margin-top:16px;">
+              <div class="card-head">
+                <div>
+                  <h3>实时发布日志（Tail）</h3>
+                  <small class="muted-text" id="pub-log-file"></small>
+                </div>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-pub-logs-refresh">刷新日志</button>
+              </div>
+              <pre class="log-console" id="pub-log-lines">暂无发布日志</pre>
+            </div>
+
+            <details class="card collapsible-card" id="pub-guide-card" style="margin-top:16px;">
+              <summary>文章 <code>.txt</code> 格式与自动插图说明</summary>
+              <div class="collapsible-body">
+                <div class="guide-grid">
+                  <div class="guide-item">
+                    <strong>1. 标题与文件名规则</strong>
+                    默认取 <code>.txt</code> 文件第 1 行作为文章标题，其余行作为正文；若文件只有 1 行或首行为空，则自动使用文件名（去除 <code>.txt</code> 后缀）作为文章标题。
+                  </div>
+                  <div class="guide-item">
+                    <strong>2. 自动分段与 HTML 排版</strong>
+                    自动去除 UTF-8 BOM 与多余空行，将正文纯文本行自动整理为标准 <code>&lt;p&gt;</code> 段落格式后推送至 AnqiCMS 导入接口。
+                  </div>
+                  <div class="guide-item">
+                    <strong>3. 自动关键词提取与关键词分栏目</strong>
+                    自动提取文章核心关键词写入标签/摘要字段；若站点配置了「标题关键词自动分栏目」，会按最长命中关键词优先匹配目标栏目 ID，未命中则归入默认栏目 <code>fid</code>。
+                  </div>
+                  <div class="guide-item">
+                    <strong>4. 绑定图库自动插图</strong>
+                    在站点设置绑定图库后，发布时将从该图库随机抽取一组图片 URL 自动穿插到文章段落中；无需在 <code>.txt</code> 中手写图片 HTML，选择「不自动插图」则纯文本发布。
+                  </div>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <!-- 5.2 图库与自动插图管理 -->
+          <div class="subtab-panel" id="pub-panel-galleries">
+            <div class="galleries-split">
+              <div class="card">
+                <div class="card-head">
+                  <h3>图库列表</h3>
+                  <div class="inline-controls">
+                    <button type="button" class="btn btn-ghost btn-sm" id="btn-gallery-refresh">刷新</button>
+                    <button type="button" class="btn btn-secondary-accent btn-sm" id="btn-gallery-new">+ 新建图库</button>
+                  </div>
+                </div>
+                <div class="gallery-list" id="gallery-list">
+                  <div class="empty-cell">加载图库列表中...</div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-head">
+                  <div>
+                    <h3 id="gallery-editor-title">新建图库</h3>
+                    <small class="muted-text" id="gallery-path-hint">空行分隔不同图片组，每行一个图片 URL（https://...）</small>
+                  </div>
+                  <button type="button" class="btn btn-danger btn-sm hidden" id="btn-gallery-delete">删除图库</button>
+                </div>
+                <form id="gallery-form">
+                  <div class="form-grid-1">
+                    <label class="field">
+                      <span>图库名称 *</span>
+                      <input type="text" class="input" id="gallery-name" required placeholder="例如 搬家行业通用配图库" />
+                    </label>
+                    <label class="field">
+                      <div class="subcard-head" style="margin-bottom:4px;">
+                        <span>图片 URL 分组内容 *</span>
+                        <span class="badge badge-info" id="gallery-stats-preview">0 组 / 0 图</span>
+                      </div>
+                      <textarea
+                        class="textarea"
+                        id="gallery-content"
+                        rows="13"
+                        placeholder="示例（用空行分隔不同图片组，每行一个图片链接）：&#10;https://img.example.com/group1/1.jpg&#10;https://img.example.com/group1/2.jpg&#10;&#10;https://img.example.com/group2/1.jpg&#10;https://img.example.com/group2/2.jpg"
+                      ></textarea>
+                    </label>
+                  </div>
+                  <div class="cta-strip">
+                    <button type="button" class="btn btn-ghost" id="btn-gallery-reset">新建空白图库</button>
+                    <button type="submit" class="btn btn-primary btn-cta" id="btn-gallery-save">保存图库</button>
+                  </div>
+                </form>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -1026,7 +1406,7 @@
               <div>
                 <h3>程序版本与 GitHub 自动更新</h3>
                 <small class="muted-text">
-                  当前版本：<span class="mono" id="app-update-current-ver">v2.0.0</span>
+                  当前版本：<span class="mono" id="app-update-current-ver">v2.0.1</span>
                   · GitHub 仓库：<a id="app-update-repo-link" href="https://github.com/zaomeng/anqicms-manager/releases" target="_blank" rel="noopener noreferrer">zaomeng/anqicms-manager</a>
                 </small>
               </div>
@@ -1042,6 +1422,25 @@
                 <a id="app-update-release-link" href="https://github.com/zaomeng/anqicms-manager/releases" target="_blank" rel="noopener noreferrer" class="muted-text hidden">前往 GitHub Release 页面 ↗</a>
               </div>
               <pre class="code-box" id="app-update-notes" style="max-height:180px;"></pre>
+            </div>
+          </div>
+
+          <div class="card startup-card" id="system-startup-card" style="margin-bottom:16px;">
+            <div class="startup-row">
+              <div>
+                <div class="inline-controls" style="gap:8px;">
+                  <strong style="font-size:14.5px;">Windows 开机自启动</strong>
+                  <span class="badge badge-neutral" id="startup-status-badge">检测中...</span>
+                </div>
+                <div class="muted-text" id="startup-status-text" style="margin-top:3px;">
+                  开启后在系统登录 Windows 时自动后台启动站群管理控制台
+                </div>
+              </div>
+              <label class="switch-toggle">
+                <input type="checkbox" id="chk-system-startup" />
+                <span class="switch-slider"></span>
+                <span class="switch-label">开机自动启动</span>
+              </label>
             </div>
           </div>
 
@@ -1305,9 +1704,42 @@
     </div>
   </div>
 
+  <!-- Pending Articles Modal -->
+  <div class="modal-backdrop hidden" id="pending-modal" role="dialog" aria-modal="true" aria-labelledby="pending-modal-title">
+    <div class="modal-card modal-wide">
+      <div class="modal-head">
+        <div>
+          <h3 id="pending-modal-title">待发文章清单</h3>
+          <small class="muted-text" id="pending-modal-summary"></small>
+        </div>
+        <button type="button" class="icon-btn" id="pending-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="table-wrap table-medium">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width:46px;">#</th>
+                <th>文件名</th>
+                <th>识别标题</th>
+                <th style="width:110px;">匹配栏目 ID</th>
+              </tr>
+            </thead>
+            <tbody id="pending-modal-body">
+              <tr><td colspan="4" class="empty-cell">加载中...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn btn-primary" id="pending-close-btn">关闭</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Stack -->
   <div class="toast-container" id="toast-container" aria-live="polite"></div>
 
-  <script src="/static/app.js" defer></script>
+  <script src="/static/app.js?v=2.0.1" defer></script>
 </body>
 </html>

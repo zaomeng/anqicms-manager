@@ -972,8 +972,33 @@ class UpgradeService:
                 )
 
             current, latest, available = parse_version_payload(result)
+            # AnqiCMS v3.6.7+ siteops_upgrade(action="check") returns the *latest* remote
+            # release under data.version (without a separate current_version field), while
+            # action="info" / system_config(action="site_version") / serverInfo carries the
+            # installed current version. Disambiguate when only one version came back.
+            if check_args.get("action") == "check" and current and not latest:
+                local_ver = ""
+                if "info" in {a.lower() for a in tool_action_enum(check_tool)}:
+                    try:
+                        info_res = client.call_tool(check_tool_name, {"action": "info"})
+                        if not info_res.is_error:
+                            local_ver, _, _ = parse_version_payload(info_res)
+                    except Exception:
+                        local_ver = ""
+                if not local_ver:
+                    local_ver, _ = self._read_local_version(client, init_result)
+                if local_ver:
+                    latest = current
+                    current = local_ver
+                    cmp_res = compare_versions(current, latest)
+                    if cmp_res is not None:
+                        available = cmp_res < 0
             if not current and (latest or available is not None):
                 current, _ = self._read_local_version(client, init_result)
+                if current and latest and available is None:
+                    cmp_res = compare_versions(current, latest)
+                    if cmp_res is not None:
+                        available = cmp_res < 0
             hint = ""
             if available is True and not upgrade_tool_name:
                 hint = _NO_UPGRADE_TOOL_HINT
@@ -1175,7 +1200,26 @@ class UpgradeService:
             if self._probe_http_home(site):
                 info = self.check_version(site)
                 if info.reachable:
-                    return True, info.current_version
+                    # During a graceful restart (e.g. AnqiCMS 3s restart delay), the old
+                    # process may still answer the first poll(s). Keep polling briefly if
+                    # version hasn't changed yet and we still have time left.
+                    if (
+                        previous_version
+                        and info.current_version
+                        and compare_versions(previous_version, info.current_version) == 0
+                        and attempt < 4
+                        and (timeout_s - elapsed) > interval_s
+                    ):
+                        if progress is not None:
+                            progress(
+                                UpgradeProgress(
+                                    site_name=name,
+                                    stage="verifying",
+                                    message=f"等待新版本重启生效（当前仍为 {info.current_version}，第 {attempt} 次）...",
+                                )
+                            )
+                    else:
+                        return True, info.current_version
 
             now = self._monotonic()
             elapsed = max(elapsed, now - start)
@@ -1355,6 +1399,23 @@ class UpgradeService:
                             message=check_result.text or "版本检测工具返回错误",
                         )
                     current_version, latest_version, upgrade_available = parse_version_payload(check_result)
+                    if check_args.get("action") == "check" and current_version and not latest_version:
+                        local_ver = ""
+                        if "info" in {a.lower() for a in tool_action_enum(check_tool)}:
+                            try:
+                                info_res = client.call_tool(check_tool.name, {"action": "info"})
+                                if not info_res.is_error:
+                                    local_ver, _, _ = parse_version_payload(info_res)
+                            except Exception:
+                                local_ver = ""
+                        if not local_ver:
+                            local_ver, _ = self._read_local_version(client, init_result)
+                        if local_ver:
+                            latest_version = current_version
+                            current_version = local_ver
+                            cmp_res = compare_versions(current_version, latest_version)
+                            if cmp_res is not None:
+                                upgrade_available = cmp_res < 0
                     if not current_version and (latest_version or upgrade_available is not None):
                         current_version, _ = self._read_local_version(client, init_result)
                     if not desired_version:
@@ -1389,19 +1450,65 @@ class UpgradeService:
                     return _finish(UPGRADE_CANCELLED, from_version=current_version, message="已取消")
 
                 upgrade_tool = upgrade_tools[0]
-                if progress is not None:
-                    progress(
-                        UpgradeProgress(
-                            site_name=name,
-                            stage="upgrading",
-                            message=f"正在执行升级（{upgrade_tool.name}）...",
-                        )
-                    )
+                call_tool_name = upgrade_tool.name
                 arguments = _build_upgrade_arguments(
                     upgrade_tool,
                     desired_version,
                     confirmed=True,
                 )
+                # AnqiCMS v3.6.7 siteops_upgrade(action="upgrade") omits the required
+                # `version` field for POST /system/api/version/upgrade (causing code:-1
+                # "版本更新失败"). When the `api` invoke tool is available and `desired_version`
+                # is known, invoke POST /system/api/version/upgrade with `version` directly.
+                schema_props = (
+                    upgrade_tool.input_schema.get("properties")
+                    if isinstance(upgrade_tool.input_schema, dict)
+                    else None
+                )
+                lacks_version_prop = not (isinstance(schema_props, dict) and "version" in schema_props)
+                if (
+                    upgrade_tool.name.lower() == "siteops_upgrade"
+                    and desired_version
+                    and lacks_version_prop
+                ):
+                    try:
+                        all_tools = client.list_tools()
+                    except Exception:
+                        all_tools = []
+                    api_tool = next(
+                        (
+                            t
+                            for t in all_tools
+                            if t.name.lower() == "api"
+                            and "invoke" in {a.lower() for a in tool_action_enum(t)}
+                        ),
+                        None,
+                    )
+                    if api_tool is not None:
+                        call_tool_name = api_tool.name
+                        arguments = {
+                            "action": "invoke",
+                            "method": "POST",
+                            "path": "/system/api/version/upgrade",
+                            "params": {
+                                "version": desired_version,
+                                "trial": False,
+                            },
+                        }
+
+                if progress is not None:
+                    label = (
+                        f"POST /system/api/version/upgrade -> {desired_version}"
+                        if call_tool_name.lower() == "api"
+                        else call_tool_name
+                    )
+                    progress(
+                        UpgradeProgress(
+                            site_name=name,
+                            stage="upgrading",
+                            message=f"正在执行升级（{label}）...",
+                        )
+                    )
                 call_kwargs: dict[str, Any] = {
                     "timeout": self._settings.upgrade.upgrade_call_timeout_s,
                 }
@@ -1409,7 +1516,7 @@ class UpgradeService:
                     call_kwargs["auto_confirm"] = True
                 try:
                     upgrade_result = client.call_tool(
-                        upgrade_tool.name,
+                        call_tool_name,
                         arguments,
                         **call_kwargs,
                     )
@@ -1486,6 +1593,75 @@ class UpgradeService:
                             from_version=current_version,
                             message=upgrade_result.text or "升级工具返回错误",
                         )
+                    payload: Any = getattr(upgrade_result, "structured", None)
+                    if not isinstance(payload, dict):
+                        raw_upgrade_text = (
+                            upgrade_result.text
+                            if isinstance(getattr(upgrade_result, "text", ""), str)
+                            else ""
+                        )
+                        stripped_upgrade_text = raw_upgrade_text.strip()
+                        if stripped_upgrade_text.startswith("{"):
+                            try:
+                                decoded_payload = json.loads(stripped_upgrade_text)
+                                if isinstance(decoded_payload, dict):
+                                    payload = decoded_payload
+                            except ValueError:
+                                payload = None
+                    if isinstance(payload, dict):
+                        json_code = payload.get("code")
+                        has_error_code = "code" in payload and (
+                            isinstance(json_code, bool)
+                            or json_code not in _SUCCESS_JSON_CODES
+                        )
+                        if payload.get("ok") is False or has_error_code:
+                            err_message = str(
+                                payload.get("msg")
+                                or payload.get("message")
+                                or payload.get("error")
+                                or (
+                                    upgrade_result.text.strip()
+                                    if isinstance(getattr(upgrade_result, "text", None), str)
+                                    else ""
+                                )
+                                or "升级接口返回失败"
+                            )
+                            err_hint = str(
+                                payload.get("hint")
+                                or "请检查目标服务器文件写入权限或登录后台查看升级日志"
+                            )
+                            return _finish(
+                                UPGRADE_FAILED,
+                                from_version=current_version,
+                                message=err_message,
+                                hint=err_hint,
+                            )
+                    if call_tool_name.lower() == "api":
+                        # AnqiCMS POST /system/api/version/upgrade replaces the binary on disk
+                        # without restarting the running process; invoke POST /system/api/anqi/restart
+                        # so the new binary actually boots up (3s graceful restart).
+                        if progress is not None:
+                            progress(
+                                UpgradeProgress(
+                                    site_name=name,
+                                    stage="restarting",
+                                    message="升级包已替换完成，正在触发 AnQiCMS 进程重启...",
+                                )
+                            )
+                        try:
+                            client.call_tool(
+                                call_tool_name,
+                                {
+                                    "action": "invoke",
+                                    "method": "POST",
+                                    "path": "/system/api/anqi/restart",
+                                },
+                                **call_kwargs,
+                            )
+                        except Exception:
+                            # Connection drop or error during restart is non-fatal;
+                            # wait_until_healthy will verify whether the new version came up.
+                            pass
             except McpApprovalRequiredError as exc:
                 return _finish(
                     UPGRADE_FAILED,

@@ -469,13 +469,15 @@ def test_static_and_health_and_dashboard_missing_publish_dir(web_env):
     r_index = requests.get(f"{base}/", timeout=3)
     assert r_index.status_code == 200
     assert "text/html" in r_index.headers["Content-Type"]
-    assert r_index.headers["Cache-Control"] == "no-cache"
+    assert "no-store" in r_index.headers["Cache-Control"]
+    assert "no-cache" in r_index.headers["Cache-Control"]
     assert "AnqiCMS Console" in r_index.text
 
     r_js = requests.get(f"{base}/static/app.js", timeout=3)
     assert r_js.status_code == 200
     assert "javascript" in r_js.headers["Content-Type"]
-    assert r_js.headers["Cache-Control"] == "no-cache"
+    assert "no-store" in r_js.headers["Cache-Control"]
+    assert "no-cache" in r_js.headers["Cache-Control"]
 
     # Path traversal blocked
     r_trav = requests.get(f"{base}/static/../config.ini", timeout=3)
@@ -1407,3 +1409,484 @@ def test_app_self_update_check_and_apply_source_and_frozen(web_env, monkeypatch)
     assert exit_ev.wait(timeout=3.5)
     assert called["stopped"] is True
     assert called["exited"] == [0]
+
+
+def test_site_reveal_secrets_query_param(web_env):
+    base = web_env["base_url"]
+
+    # Default GET /api/sites remains masked
+    r_list = requests.get(f"{base}/api/sites", timeout=3)
+    assert r_list.status_code == 200
+    list_text = r_list.text
+    assert "alpha-mcp-secret-9999" not in list_text
+    assert "PassAlpha!Secret" not in list_text
+    assert "alpha-import-tok-1111" not in list_text
+    alpha_masked = next(s for s in r_list.json()["data"]["sites"] if s["name"] == "alpha")
+    assert "mcp_token" not in alpha_masked
+    assert "jiekou" not in alpha_masked
+    assert "admin_password" not in alpha_masked
+    assert alpha_masked["has_mcp_token"] is True
+    assert alpha_masked["has_admin_password"] is True
+
+    # Default GET /api/sites/<name> also remains masked
+    r_single_masked = requests.get(f"{base}/api/sites/alpha", timeout=3)
+    assert r_single_masked.status_code == 200
+    single_masked = r_single_masked.json()["data"]["site"]
+    assert "mcp_token" not in single_masked
+    assert "jiekou" not in single_masked
+    assert "admin_password" not in single_masked
+
+    # GET /api/sites/alpha?reveal=1 returns unmasked values
+    r_single_reveal = requests.get(f"{base}/api/sites/alpha?reveal=1", timeout=3)
+    assert r_single_reveal.status_code == 200
+    revealed = r_single_reveal.json()["data"]["site"]
+    assert revealed["mcp_token"] == "alpha-mcp-secret-9999"
+    assert revealed["jiekou"] == "/api/import/archive?token=alpha-import-tok-1111"
+    assert revealed["admin_password"] == "PassAlpha!Secret"
+
+    # GET /api/sites?reveal=1 also returns unmasked values
+    r_list_reveal = requests.get(f"{base}/api/sites?reveal=1", timeout=3)
+    assert r_list_reveal.status_code == 200
+    alpha_revealed = next(s for s in r_list_reveal.json()["data"]["sites"] if s["name"] == "alpha")
+    assert alpha_revealed["mcp_token"] == "alpha-mcp-secret-9999"
+    assert alpha_revealed["jiekou"] == "/api/import/archive?token=alpha-import-tok-1111"
+    assert alpha_revealed["admin_password"] == "PassAlpha!Secret"
+
+
+def test_site_full_publishing_parity_and_gallery_crud(web_env):
+    from core.content_service import parse_image_groups
+
+    base = web_env["base_url"]
+    cfg_path = web_env["config_path"]
+
+    # Initially empty galleries
+    r_empty = requests.get(f"{base}/api/galleries", timeout=3)
+    assert r_empty.status_code == 200
+    assert r_empty.json()["data"]["galleries"] == []
+
+    # Invalid gallery content rejected with 400
+    r_bad_gal = requests.post(
+        f"{base}/api/galleries",
+        json={"name": "坏图库", "content": "[默认]\nnot-a-valid-image-url\n"},
+        timeout=3,
+    )
+    assert r_bad_gal.status_code == 400
+
+    # Create gallery with grouped image URLs
+    gal_content = (
+        "[产品]\n"
+        "https://img.example.com/p1.jpg\n"
+        "https://img.example.com/p2.jpg\n"
+        "[案例]\n"
+        "/uploads/case1.webp\n"
+    )
+    r_create_gal = requests.post(
+        f"{base}/api/galleries",
+        json={"name": "主图库", "content": gal_content},
+        timeout=3,
+    )
+    assert r_create_gal.status_code == 200
+    create_gal_data = r_create_gal.json()["data"]
+    assert create_gal_data["created"] is True
+    gal = create_gal_data["gallery"]
+    gid = gal["id"]
+    assert gal["name"] == "主图库"
+    assert gal["group_count"] == 2
+    assert gal["image_count"] == 3
+    assert gal["content"] == gal_content
+    assert Path(gal["path"]).is_file()
+
+    # GET /api/galleries lists created gallery
+    r_list_gal = requests.get(f"{base}/api/galleries", timeout=3)
+    assert r_list_gal.status_code == 200
+    gals = r_list_gal.json()["data"]["galleries"]
+    assert len(gals) == 1
+    assert gals[0]["id"] == gid
+    assert gals[0]["group_count"] == 2
+    assert gals[0]["image_count"] == 3
+
+    # Update gallery name and content
+    updated_content = "[产品]\nhttps://img.example.com/p1-new.jpg\n/uploads/p2.png\n"
+    r_upd_gal = requests.post(
+        f"{base}/api/galleries",
+        json={"id": gid, "name": "主图库V2", "content": updated_content},
+        timeout=3,
+    )
+    assert r_upd_gal.status_code == 200
+    upd_gal_data = r_upd_gal.json()["data"]
+    assert upd_gal_data["created"] is False
+    assert upd_gal_data["gallery"]["name"] == "主图库V2"
+    assert upd_gal_data["gallery"]["group_count"] == 1
+    assert upd_gal_data["gallery"]["image_count"] == 2
+    assert upd_gal_data["gallery"]["content"] == updated_content
+
+    # Save site with full publishing fields + gallery_id + publish_times string + category_keywords
+    custom_pub_dir = web_env["tmp_path"] / "custom_articles" / "pubsite"
+    r_save_site = requests.post(
+        f"{base}/api/sites",
+        json={
+            "name": "pubsite",
+            "full_endpoint": "https://pubsite.example.com/api/import/archive?token=pub-tok-123",
+            "fid": 5,
+            "category_name": "行业资讯",
+            "category_keywords": {"5": ["行业", "动态"], "8": ["评测"]},
+            "publish_dir": str(custom_pub_dir),
+            "publish_times": "08:30:00, 14:00:00\n08:30:00",
+            "interval_time": 45,
+            "daily_publish_limit": 25,
+            "article_warning_threshold": 120,
+            "gallery_id": gid,
+            "enabled": True,
+        },
+        timeout=3,
+    )
+    assert r_save_site.status_code == 200
+    saved_payload = r_save_site.json()["data"]["site"]
+    assert saved_payload["fid"] == 5
+    assert saved_payload["category_name"] == "行业资讯"
+    assert saved_payload["category_keywords"] == {"5": ["行业", "动态"], "8": ["评测"]}
+    assert Path(saved_payload["publish_dir"]).resolve() == custom_pub_dir.resolve()
+    assert saved_payload["publish_time"] == "08:30:00"
+    assert saved_payload["publish_times"] == ["08:30:00"]
+    assert saved_payload["interval_time"] == 45
+    assert saved_payload["daily_publish_limit"] == 25
+    assert saved_payload["article_warning_threshold"] == 120
+    assert saved_payload["gallery_id"] == gid
+    assert Path(saved_payload["image_file"]).resolve() == Path(gal["path"]).resolve()
+    assert saved_payload["enabled"] is True
+
+    # Verify persisted on disk and ContentService can parse the synced image_file
+    disk_site = next(s for s in load_config(cfg_path) if s.name == "pubsite")
+    assert disk_site.gallery_id == gid
+    assert disk_site.image_file is not None
+    assert disk_site.image_file.resolve() == Path(gal["path"]).resolve()
+    assert parse_image_groups(disk_site.image_file) == {
+        "产品": ["https://img.example.com/p1-new.jpg", "/uploads/p2.png"]
+    }
+
+    # GET /api/sites returns all publishing fields cleanly
+    r_sites = requests.get(f"{base}/api/sites", timeout=3)
+    assert r_sites.status_code == 200
+    pub_row = next(s for s in r_sites.json()["data"]["sites"] if s["name"] == "pubsite")
+    for required_key in (
+        "publish_dir",
+        "publish_times",
+        "publish_time",
+        "interval_time",
+        "daily_publish_limit",
+        "article_warning_threshold",
+        "gallery_id",
+        "image_file",
+        "category_name",
+        "category_keywords",
+        "enabled",
+        "fid",
+    ):
+        assert required_key in pub_row
+    assert pub_row["category_keywords"] == {"5": ["行业", "动态"], "8": ["评测"]}
+
+    # Also test publish_times list input
+    r_list_times = requests.post(
+        f"{base}/api/sites",
+        json={"name": "pubsite", "publish_times": ["09:45:00"]},
+        timeout=3,
+    )
+    assert r_list_times.status_code == 200
+    assert r_list_times.json()["data"]["site"]["publish_times"] == ["09:45:00"]
+    assert r_list_times.json()["data"]["site"]["publish_time"] == "09:45:00"
+
+    # Reject invalid publish_times / non-existent gallery_id / conflicting keywords
+    assert requests.post(
+        f"{base}/api/sites",
+        json={"name": "pubsite", "publish_times": "25:00:00"},
+        timeout=3,
+    ).status_code == 400
+    assert requests.post(
+        f"{base}/api/sites",
+        json={"name": "pubsite", "gallery_id": "00000000-0000-4000-8000-000000000000"},
+        timeout=3,
+    ).status_code == 400
+    assert requests.post(
+        f"{base}/api/sites",
+        json={"name": "pubsite", "category_keywords": {"5": ["重复"], "8": ["重复"]}},
+        timeout=3,
+    ).status_code == 400
+
+    # DELETE /api/galleries/<id> fails with 400 listing bound site names while referenced
+    r_del_bound = requests.delete(f"{base}/api/galleries/{gid}", timeout=3)
+    assert r_del_bound.status_code == 400
+    assert "pubsite" in r_del_bound.json()["error"]
+
+    # Unbind gallery from site, then delete succeeds
+    r_unbind = requests.post(
+        f"{base}/api/sites",
+        json={"name": "pubsite", "gallery_id": ""},
+        timeout=3,
+    )
+    assert r_unbind.status_code == 200
+    assert r_unbind.json()["data"]["site"]["gallery_id"] == ""
+    assert r_unbind.json()["data"]["site"]["image_file"] == ""
+
+    r_del_ok = requests.delete(f"{base}/api/galleries/{gid}", timeout=3)
+    assert r_del_ok.status_code == 200
+    assert r_del_ok.json()["data"]["deleted"] == gid
+    assert requests.get(f"{base}/api/galleries", timeout=3).json()["data"]["galleries"] == []
+
+
+def test_site_categories_publish_pending_and_startup_toggle(web_env, monkeypatch):
+    from core.category_service import CategoryService
+    from core.startup_service import StartupService
+
+    base = web_env["base_url"]
+    app = web_env["app"]
+
+    # 1. POST /api/sites/<name>/categories via CategoryService
+    cat_calls: list[tuple[str, dict[str, Any]]] = []
+
+    class _FakeCatSession:
+        def get(self, url: str, **kwargs):
+            cat_calls.append((url, kwargs))
+            return _FakeHttpResponse(
+                200,
+                json_data={
+                    "code": 0,
+                    "data": [
+                        {"id": 1, "parent_id": 0, "title": "新闻中心"},
+                        {"id": 12, "parent_id": 1, "title": "行业动态"},
+                    ],
+                },
+            )
+
+    monkeypatch.setattr(app, "category_service", CategoryService(session=_FakeCatSession()))
+    r_cats = requests.post(f"{base}/api/sites/alpha/categories", json={}, timeout=3)
+    assert r_cats.status_code == 200
+    cats_payload = r_cats.json()
+    assert cats_payload["ok"] is True
+    assert cats_payload["data"]["categories"] == [
+        {"id": 1, "parent_id": 0, "title": "新闻中心"},
+        {"id": 12, "parent_id": 1, "title": "行业动态"},
+    ]
+    assert cat_calls[0][0] == "https://alpha.example.com/api/import/categories?token=alpha-import-tok-1111"
+
+    # Missing site -> 404
+    assert requests.post(f"{base}/api/sites/no-such-site/categories", json={}, timeout=3).status_code == 404
+
+    # 2. GET /api/publish/pending/<name> via SiteService (count + first 50 items + matched category_id)
+    r_kw = requests.post(
+        f"{base}/api/sites",
+        json={"name": "alpha", "category_keywords": {"12": ["动态快讯"]}},
+        timeout=3,
+    )
+    assert r_kw.status_code == 200
+
+    alpha_site = next(s for s in app.load_sites() if s.name == "alpha")
+    for f in alpha_site.publish_dir.glob("*.txt"):
+        f.unlink()
+    for idx in range(55):
+        title = f"动态快讯_{idx:02d}" if idx == 0 else f"普通文章_{idx:02d}"
+        (alpha_site.publish_dir / f"{title}.txt").write_text("正文内容测试", encoding="utf-8")
+
+    r_pending = requests.get(f"{base}/api/publish/pending/alpha", timeout=3)
+    assert r_pending.status_code == 200
+    pending_data = r_pending.json()["data"]
+    assert pending_data["count"] == 55
+    assert pending_data["total"] == 55
+    assert len(pending_data["items"]) == 50
+    matched_item = next(it for it in pending_data["items"] if it["title"] == "动态快讯_00")
+    assert matched_item["filename"] == "动态快讯_00.txt"
+    assert matched_item["category_id"] == 12
+    normal_item = next(it for it in pending_data["items"] if it["title"] == "普通文章_01")
+    assert normal_item["category_id"] == 1  # default alpha fid
+
+    # 3. GET & POST /api/system/startup via StartupService with in-memory FakeRegistry
+    class _FakeKey:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    class _FakeRegistry:
+        HKEY_CURRENT_USER = "HKCU"
+        KEY_QUERY_VALUE = 1
+        KEY_SET_VALUE = 2
+        REG_SZ = 1
+
+        def __init__(self) -> None:
+            self.values: dict[str, str] = {}
+
+        def CreateKeyEx(self, _root, _path, _reserved, _access):
+            return _FakeKey()
+
+        def OpenKey(self, _root, _path, _reserved, _access):
+            if not self.values:
+                raise FileNotFoundError
+            return _FakeKey()
+
+        def SetValueEx(self, _key, name, _reserved, _value_type, value):
+            self.values[name] = value
+
+        def QueryValueEx(self, _key, name):
+            if name not in self.values:
+                raise FileNotFoundError
+            return self.values[name], self.REG_SZ
+
+        def DeleteValue(self, _key, name):
+            if name not in self.values:
+                raise FileNotFoundError
+            del self.values[name]
+
+    fake_startup = StartupService(
+        platform="win32",
+        registry=_FakeRegistry(),
+        executable=web_env["tmp_path"] / "AnqiCMSConsole.exe",
+        preference_path=web_env["tmp_path"] / "设置" / "startup_pref_test.json",
+        frozen=True,
+    )
+    monkeypatch.setattr(app, "startup_service", fake_startup)
+
+    r_st0 = requests.get(f"{base}/api/system/startup", timeout=3)
+    assert r_st0.status_code == 200
+    assert r_st0.json()["data"] == {"supported": True, "enabled": False}
+
+    r_st_on = requests.post(f"{base}/api/system/startup", json={"enabled": True}, timeout=3)
+    assert r_st_on.status_code == 200
+    assert r_st_on.json()["data"]["supported"] is True
+    assert r_st_on.json()["data"]["enabled"] is True
+    assert fake_startup.is_enabled() is True
+
+    r_st_off = requests.post(f"{base}/api/system/startup", json={"enabled": False}, timeout=3)
+    assert r_st_off.status_code == 200
+    assert r_st_off.json()["data"]["enabled"] is False
+    assert fake_startup.is_enabled() is False
+
+    assert requests.post(f"{base}/api/system/startup", json={"enabled": "yes"}, timeout=3).status_code == 400
+
+
+def test_upgrade_json_error_fast_fail_skips_restart_and_health_poll():
+    from models.sitegroup import UPGRADE_FAILED
+
+    class _FakeClock:
+        def __init__(self) -> None:
+            self.now = 100.0
+            self.sleeps: list[float] = []
+
+        def monotonic(self) -> float:
+            return self.now
+
+        def sleep(self, seconds: float) -> None:
+            self.sleeps.append(seconds)
+            self.now += seconds
+
+    class _FastFailMcpClient:
+        def __init__(self, upgrade_result: McpToolResult) -> None:
+            self._upgrade_result = upgrade_result
+            self.calls: list[tuple[str, dict[str, Any] | None]] = []
+            self.closed = False
+
+        def initialize(self) -> dict[str, Any]:
+            return {"protocolVersion": "2025-06-18", "serverInfo": {"version": "3.6.7"}}
+
+        def list_tools(self, *, refresh: bool = False) -> list[McpToolInfo]:
+            return [
+                McpToolInfo(
+                    name="siteops_upgrade",
+                    description="系统版本检测与升级",
+                    input_schema={
+                        "type": "object",
+                        "properties": {"action": {"type": "string", "enum": ["check", "info", "upgrade"]}},
+                    },
+                ),
+                McpToolInfo(
+                    name="api",
+                    description="Invoke backend API",
+                    input_schema={
+                        "type": "object",
+                        "properties": {"action": {"type": "string", "enum": ["invoke"]}},
+                    },
+                ),
+            ]
+
+        def find_tools(self, keywords, *, explicit_names=()) -> list[McpToolInfo]:
+            return [self.list_tools()[0]]
+
+        def call_tool(self, name: str, arguments: dict | None = None, **kwargs) -> McpToolResult:
+            self.calls.append((name, arguments))
+            if name == "siteops_upgrade" and (arguments or {}).get("action") == "check":
+                return McpToolResult(
+                    is_error=False,
+                    text="",
+                    structured={"current_version": "3.6.7", "latest_version": "3.6.8"},
+                )
+            if name == "api" and (arguments or {}).get("path") == "/system/api/version/upgrade":
+                return self._upgrade_result
+            raise AssertionError(f"Unexpected tool call: {name} {arguments}")
+
+        def close(self) -> None:
+            self.closed = True
+
+    site = SiteConfig(
+        name="fastfail-site",
+        fid=1,
+        url="https://fastfail.example.com",
+        jiekou="",
+        publish_dir=Path("."),
+        daily_publish_filename=Path("daily.txt"),
+        publish_time="06:00:00",
+        interval_time=60,
+        daily_publish_limit=10,
+        mcp_token="tok-fastfail",
+    )
+
+    # Case 1: code: -1 in structured JSON with is_error=False
+    clock1 = _FakeClock()
+    client1 = _FastFailMcpClient(
+        McpToolResult(
+            is_error=False,
+            text='{"code": -1, "msg": "版本更新失败"}',
+            structured={"code": -1, "msg": "版本更新失败"},
+        )
+    )
+    settings = IntegrationSettings()
+    settings.upgrade.restart_wait_s = 10.0
+    settings.upgrade.health_timeout_s = 90.0
+    svc1 = UpgradeService(
+        settings,
+        mcp_client_factory=lambda _s: client1,
+        sleep=clock1.sleep,
+        monotonic=clock1.monotonic,
+    )
+    res1 = svc1.upgrade_site(site, confirmed=True)
+    assert res1.status == UPGRADE_FAILED
+    assert res1.from_version == "3.6.7"
+    assert res1.message == "版本更新失败"
+    assert res1.hint == "请检查目标服务器文件写入权限或登录后台查看升级日志"
+    assert clock1.sleeps == []
+    assert all((args or {}).get("path") != "/system/api/anqi/restart" for _, args in client1.calls)
+    assert client1.closed is True
+
+    # Case 2: ok: false in JSON text (structured=None) with is_error=False
+    clock2 = _FakeClock()
+    client2 = _FastFailMcpClient(
+        McpToolResult(
+            is_error=False,
+            text='{"ok": false, "msg": "磁盘只读无法替换二进制", "hint": "检查文件权限"}',
+            structured=None,
+        )
+    )
+    svc2 = UpgradeService(
+        settings,
+        mcp_client_factory=lambda _s: client2,
+        sleep=clock2.sleep,
+        monotonic=clock2.monotonic,
+    )
+    res2 = svc2.upgrade_site(site, confirmed=True)
+    assert res2.status == UPGRADE_FAILED
+    assert res2.from_version == "3.6.7"
+    assert res2.message == "磁盘只读无法替换二进制"
+    assert res2.hint == "检查文件权限"
+    assert clock2.sleeps == []
+    assert all((args or {}).get("path") != "/system/api/anqi/restart" for _, args in client2.calls)
+    assert client2.closed is True
+
+
