@@ -11,6 +11,9 @@ a = Analysis(
     ],
     hiddenimports=[
         'core.sitegroup_mcp_server',
+        'core.self_updater',
+        'core.app_info',
+        'core.anqicms_mcp_client',
         'mcp_server',
     ],
     hookspath=[],

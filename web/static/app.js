@@ -695,7 +695,7 @@
 
   // ------------------------------------------------------------------ Core Data Loading
   function updateVersionPills(version, updateAvailable = false, latestVersion = "") {
-    const cleanVer = String(version || "2.0.1").replace(/^v/i, "");
+    const cleanVer = String(version || "2.0.2").replace(/^v/i, "");
     const verLabel = `v${cleanVer}`;
     const currentEl = $("app-update-current-ver");
     if (currentEl) currentEl.textContent = verLabel;
@@ -722,7 +722,7 @@
     try {
       const data = await apiFetch("/api/health");
       state.health = data;
-      const ver = data.version || "2.0.1";
+      const ver = data.version || "2.0.2";
       $("app-version-label").textContent = `v${ver} · 端口 ${data.port}`;
       updateVersionPills(
         ver,
@@ -3331,7 +3331,7 @@
   // ------------------------------------------------------------------ 6. Settings, MCP & Audit
   function renderAppUpdateCard(info) {
     if (!info) return;
-    const currentVer = String(info.current_version || (state.health && state.health.version) || "2.0.1").replace(/^v/i, "");
+    const currentVer = String(info.current_version || (state.health && state.health.version) || "2.0.2").replace(/^v/i, "");
     const latestVer = String(info.latest_version || "").replace(/^v/i, "");
     const available = Boolean(info.update_available);
 
@@ -3393,7 +3393,7 @@
         if (data.update_available) {
           showToast("发现程序新版本", `最新版本 v${String(data.latest_version || "").replace(/^v/i, "")}`, "info");
         } else {
-          showToast("当前已是最新版本", data.message || `v${String(data.current_version || "2.0.1").replace(/^v/i, "")}`, "success");
+          showToast("当前已是最新版本", data.message || `v${String(data.current_version || "2.0.2").replace(/^v/i, "")}`, "success");
         }
       }
     } catch (err) {
